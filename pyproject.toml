@@ -1,0 +1,24 @@
+[project]
+name = "ideogram-studio-backend"
+version = "0.1.0"
+description = "FastAPI backend for Ideogram 4 Studio"
+requires-python = ">=3.11"
+dependencies = [
+  "alembic>=1.13",
+  "anyio>=4.0",
+  "boto3>=1.34",
+  "fastapi>=0.115",
+  "json-repair>=0.30",
+  "psycopg[binary]>=3.2",
+  "psycopg2-binary>=2.9",
+  "pydantic>=2.8",
+  "requests[socks]>=2.32",
+  "sqlalchemy>=2.0",
+  "uvicorn[standard]>=0.30",
+]
+
+[dependency-groups]
+dev = []
+
+[tool.uv]
+package = false

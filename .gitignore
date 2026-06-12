@@ -1,0 +1,39 @@
+# Secrets and local configuration
+config/config.toml
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.venv/
+.venv-*/
+venv/
+
+# Local databases and runtime output
+*.db
+*.sqlite
+*.sqlite3
+scratch/
+output/
+output_test/
+tmp/
+
+# Editors and operating systems
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Caches
+.cache/

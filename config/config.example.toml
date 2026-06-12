@@ -1,0 +1,26 @@
+[deepseek]
+api_key = ""
+model = "deepseek-reasoner"
+max_simultaneous = 3
+stream = true
+thinking_enabled = true
+reasoning_effort = "high"
+
+[[inference]]
+default = true
+type = "modal"
+name = "ideogram-fp8"
+url = "https://your-modal-endpoint.modal.run"
+proxy_auth_key = ""
+proxy_auth_secret = ""
+max_simultaneous = 2
+
+[database]
+url = "postgresql+psycopg://user:password@localhost:5432/ideoui"
+
+[r2]
+account_id = ""
+access_key_id = ""
+secret_access_key = ""
+bucket_name = ""
+public_url = ""
