@@ -1951,6 +1951,18 @@ job-queue {
     overflow: hidden;
 }
 
+.gen-preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid var(--card-border);
+    border-radius: 10px;
+    background: var(--control-bg-hover);
+    max-height: 50vh;
+    overflow-y: auto;
+}
+
 .gen-preview-img {
     max-width: 100%;
     max-height: 45vh;

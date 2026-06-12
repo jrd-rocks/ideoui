@@ -255,7 +255,7 @@ class ModalProvider(BaseProvider):
         )
         response.raise_for_status()
 
-        image_bytes_list = []
+        image_bytes_list = None
         for line in response.iter_lines(decode_unicode=True):
             if not line or not line.startswith("data: "):
                 continue
@@ -266,16 +266,14 @@ class ModalProvider(BaseProvider):
                 progress_callback("status", payload)
             elif event_type == "step" and progress_callback:
                 progress_callback("step", payload)
-            elif event_type == "image":
-                image_bytes_list.append(base64.b64decode(payload["data"]))
-                print(f"[Modal Provider] Received image {payload.get('index', 0) + 1}/{payload.get('total', '?')}", flush=True)
             elif event_type == "complete":
-                pass  # signal that all images received
+                encoded_images = payload.get("images", [])
+                image_bytes_list = [base64.b64decode(b) for b in encoded_images]
             elif event_type == "error":
                 raise ValueError(payload.get("message", "Unknown Modal error"))
 
-        if not image_bytes_list:
-            raise ValueError("Stream ended without any images")
+        if image_bytes_list is None:
+            raise ValueError("Stream ended without complete event")
 
         urls = []
         timestamp = int(time.time() * 1000)

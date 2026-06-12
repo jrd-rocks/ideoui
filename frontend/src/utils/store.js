@@ -223,11 +223,12 @@ class QueueStore {
     const jobId = payload.job_id || payload.id;
     if (!jobId) return;
     const updates = {};
-    if (payload.progress_event === 'step') {
-      updates.genStep = payload.step;
-      updates.genTotal = payload.total;
-      if (payload.preview) {
-        updates.genPreview = `data:image/jpeg;base64,${payload.preview}`;
+      if (payload.progress_event === 'step') {
+        updates.genStep = payload.step;
+        updates.genTotal = payload.total;
+        if (payload.previews) {
+          updates.genPreviews = payload.previews.map(p => `data:image/jpeg;base64,${p}`);
+        }
       }
     } else if (payload.progress_event === 'status') {
       updates.genStatus = payload.text;

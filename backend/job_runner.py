@@ -157,7 +157,7 @@ async def execute_server_job(job_id: str):
                 update_job_record(job_id, display_text=display, progress_step="generating")
                 push_generation_progress(job_id, "step", {
                     "step": step, "total": total,
-                    "preview": data.get("preview"),
+                    "previews": data.get("previews"),
                 })
             elif event_type == "status":
                 push_generation_progress(job_id, "status", {

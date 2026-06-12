@@ -186,8 +186,7 @@ renderCurrentContent() {
     const loadingTitle = job.status === "pending" ? "Queued" : job.status === "generating" ? "Generating" : job.status === "upsampling" ? "Upsampling" : "Working";
     const loadingMsg = job.displayText || job.display_text || "Waiting for the next server update...";
     const steps = job.steps && job.steps.length ? job.steps : [{ name: loadingMsg, status: "active" }];
-    const hasPreview = job.genPreview && job.status === "generating";
-    const stepLabel = job.genStep && job.genTotal ? `Step ${job.genStep}/${job.genTotal}` : '';
+    const hasPreviews = job.genPreviews && job.genPreviews.length > 0 && job.status === "generating";
 
     return html`
       <!-- Loading State -->
@@ -210,9 +209,11 @@ renderCurrentContent() {
             `)}
           </div>
         </div>
-        ${hasPreview ? html`
-          <div class="gen-preview-container">
-            <img class="gen-preview-img" src="${job.genPreview}" alt="Generation preview">
+        ${hasPreviews ? html`
+          <div class="gen-preview-grid">
+            ${job.genPreviews.map((src, i) => html`
+              <img class="gen-preview-img" src="${src}" alt="Preview ${i + 1}">
+            `)}
           </div>
         ` : ''}
         <div class="loading-main">
