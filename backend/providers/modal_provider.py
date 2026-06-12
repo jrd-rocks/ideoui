@@ -25,6 +25,19 @@ BASE_SIZES = {
 
 
 class ModalProvider(BaseProvider):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._active_response = None
+
+    def cancel(self):
+        resp = self._active_response
+        if resp is not None:
+            self._active_response = None
+            try:
+                resp.close()
+            except Exception:
+                pass
+
     def _split_modal_url(self) -> tuple[str, dict | None]:
         modal_url = self.config.get("url")
         if not modal_url:
@@ -249,11 +262,12 @@ class ModalProvider(BaseProvider):
             request_params["guidance_scale"] = params["guidance_scale"]
 
         print(f"[Modal Provider] Streaming from: {modal_url}", flush=True)
-        response = requests.get(
+        self._active_response = requests.get(
             modal_url, params=request_params, headers=headers,
             proxies=proxies, timeout=600, stream=True,
         )
-        response.raise_for_status()
+        self._active_response.raise_for_status()
+        response = self._active_response
 
         image_bytes_list = None
         for line in response.iter_lines(decode_unicode=True):

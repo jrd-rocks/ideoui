@@ -51,6 +51,11 @@ def cancel_job_task(job_id: str):
     task = job_tasks.pop(job_id, None)
     if task and not task.done():
         task.cancel()
+    # Also cancel any active streaming response on the provider
+    from backend.providers import get_generation_providers
+    for provider in get_generation_providers().values():
+        if hasattr(provider, 'cancel'):
+            provider.cancel()
 
 
 def describe_upsampler(upsampler, upsampler_params: dict) -> str:
