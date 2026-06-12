@@ -154,9 +154,7 @@ async def execute_server_job(job_id: str):
                 step = data.get("current", 0)
                 total = data.get("total", 0)
                 display = f"Step {step}/{total}"
-                anyio.from_thread.run(
-                    lambda: update_job_record(job_id, display_text=display, progress_step="generating"),
-                )
+                update_job_record(job_id, display_text=display, progress_step="generating")
                 push_generation_progress(job_id, "step", {
                     "step": step, "total": total,
                     "preview": data.get("preview"),
