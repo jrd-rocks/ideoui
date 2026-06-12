@@ -82,4 +82,4 @@ def push_generation_progress(job_id: str, event_type: str, data: dict):
         "progress_event": event_type,
         **data,
     }
-    anyio.from_thread.run(ws_manager.broadcast, payload)
+    anyio.from_thread.run(lambda: ws_manager.broadcast(payload))
