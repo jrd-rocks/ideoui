@@ -212,35 +212,44 @@ renderCurrentContent() {
         </div>
         ${hasPreviews ? html`
           <div class="gen-preview-grid">
-            ${job.genPreviews.map((src, i) => html`
-              <img class="gen-preview-img" src="${src}" alt="Preview ${i + 1}">
-            `)}
+            ${job.genPreviews.map((src, i) => {
+              const sizeStr = job.params?.size || "1024x1024";
+              const [w, h] = sizeStr.split("x").map(Number);
+              const aspect = (w && h) ? `${w} / ${h}` : "1 / 1";
+              return html`
+                <div class="gen-preview-card" style="aspect-ratio: ${aspect};">
+                  <img class="gen-preview-img" src="${src}" alt="Preview ${i + 1}">
+                </div>
+              `;
+            })}
           </div>
         ` : ''}
-        <div class="loading-main">
-          ${job.status === 'upsampling' || job.llmStream?.content || job.llmStream?.thinking ? html`
-            <details class="llm-stream-panel" ?open="${!job.llmStream?.done}">
-              <summary>
-                <span class="thinking-pulse"></span>
-                ${job.llmStream?.done ? 'Final prompt' : 'Thinking and building prompt'}
-              </summary>
-              <div class="llm-stream-body">
-                ${job.llmStream?.thinking ? html`
-                  <section class="llm-stream-section thinking">
-                    <div class="llm-stream-label">Thinking</div>
-                    <pre class="llm-stream-thinking" data-stream-pane="thinking" @scroll="${this.onStreamScroll}">${job.llmStream.thinking}</pre>
+        ${(!hasPreviews || job.status === 'upsampling' || job.llmStream?.content || job.llmStream?.thinking) ? html`
+          <div class="loading-main">
+            ${job.status === 'upsampling' || job.llmStream?.content || job.llmStream?.thinking ? html`
+              <details class="llm-stream-panel" ?open="${!job.llmStream?.done}">
+                <summary>
+                  <span class="thinking-pulse"></span>
+                  ${job.llmStream?.done ? 'Final prompt' : 'Thinking and building prompt'}
+                </summary>
+                <div class="llm-stream-body">
+                  ${job.llmStream?.thinking ? html`
+                    <section class="llm-stream-section thinking">
+                      <div class="llm-stream-label">Thinking</div>
+                      <pre class="llm-stream-thinking" data-stream-pane="thinking" @scroll="${this.onStreamScroll}">${job.llmStream.thinking}</pre>
+                    </section>
+                  ` : ''}
+                  <section class="llm-stream-section content">
+                    <div class="llm-stream-label">Generated prompt</div>
+                    ${job.llmStream?.content ? html`<pre class="llm-stream-content" data-stream-pane="content" @scroll="${this.onStreamScroll}">${job.llmStream.content}</pre>` : html`<div class="llm-stream-placeholder">Waiting for generated prompt tokens...</div>`}
                   </section>
-                ` : ''}
-                <section class="llm-stream-section content">
-                  <div class="llm-stream-label">Generated prompt</div>
-                  ${job.llmStream?.content ? html`<pre class="llm-stream-content" data-stream-pane="content" @scroll="${this.onStreamScroll}">${job.llmStream.content}</pre>` : html`<div class="llm-stream-placeholder">Waiting for generated prompt tokens...</div>`}
-                </section>
-              </div>
-            </details>
-          ` : html`
-            <div class="loading-empty-stream">Waiting for the first provider update...</div>
-          `}
-        </div>
+                </div>
+              </details>
+            ` : html`
+              <div class="loading-empty-stream">Waiting for the first provider update...</div>
+            `}
+          </div>
+        ` : ''}
         <div class="loading-cancel-wrapper">
           <button id="cancelActiveJobBtn" class="loading-cancel-btn" @click="${this.cancelActiveJob}">Cancel Generation</button>
         </div>
