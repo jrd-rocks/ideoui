@@ -38,12 +38,13 @@ Here is how the project is structured:
 
 ```
 ├── frontend/                   # Lit + Vite frontend application
-├── backend/                    # FastAPI backend, DB schemas, and provider integrations
-│   ├── migrations/             # Alembic migration history
-│   └── providers/              # API connectors for DeepSeek and generation endpoints
+├── backend/                    # FastAPI backend and DB schemas
+│   └── migrations/             # Alembic migration history
 ├── config/
 │   ├── config.example.toml     # Template configuration file
-│   └── config.toml             # Your local configuration (git-ignored)
+│   ├── config.toml             # Your local configuration (git-ignored)
+│   ├── providers/              # TOML configurations for DeepSeek and generation endpoints
+│   └── upsample-prompts/       # System prompts for upsample templates (e.g. v1, v4)
 ├── static/                     # Built frontend assets served by the backend
 ├── server.py                   # Main entry point to run the FastAPI server
 ├── engine.md                   # Documentation for the TOML-driven generic provider engines
