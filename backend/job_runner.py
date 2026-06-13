@@ -187,6 +187,7 @@ async def execute_server_job(job_id: str):
 
         save_completed_history(job_id, images)
         previews_url = None
+        print(f"[Jobs] Collected {len(collected_previews)} preview images for zip upload", flush=True)
         if collected_previews:
             import time, random
             ts = int(time.time() * 1000)
