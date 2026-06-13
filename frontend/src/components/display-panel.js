@@ -279,6 +279,7 @@ renderCurrentContent() {
           .upsampledPrompt="${job.upsampledPrompt}"
           .uuid="${job.uuid}"
           .parentUuid="${job.parentUuid}"
+          .genPreviews="${job.genPreviews || []}"
           @open-lightbox="${(e) => this.dispatchEvent(new CustomEvent('open-lightbox', { detail: e.detail }))}">
         </image-grid>
         <prompt-inspector .upsampledPrompt="${job.upsampledPrompt}"></prompt-inspector>

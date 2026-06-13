@@ -9,7 +9,8 @@ export class ImageGrid extends LitElement {
     params: { type: Object },
     upsampledPrompt: { type: String },
     uuid: { type: String },
-    parentUuid: { type: String }
+    parentUuid: { type: String },
+    genPreviews: { type: Array }
   };
 
   createRenderRoot() {
@@ -34,7 +35,8 @@ export class ImageGrid extends LitElement {
       rawPrompt: this.rawPrompt,
       images: this.images,
       params: this.params,
-      upsampledPrompt: this.upsampledPrompt
+      upsampledPrompt: this.upsampledPrompt,
+      genPreviews: this.genPreviews || []
     };
     this.dispatchEvent(new CustomEvent('open-lightbox', {
       detail: {
