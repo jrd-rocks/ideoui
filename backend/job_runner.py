@@ -200,6 +200,7 @@ async def execute_server_job(job_id: str):
                 print(f"[Jobs] Uploaded previews zip: {previews_url}", flush=True)
             except Exception as exc:
                 print(f"[Jobs] Failed to upload previews zip: {exc}", flush=True)
+        print(f"[Jobs] About to update job with previews_url={previews_url}", flush=True)
         state = update_job_record(
             job_id,
             images=images,
