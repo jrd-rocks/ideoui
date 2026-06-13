@@ -47,7 +47,15 @@ async def create_job(payload: JobCreate):
 
     job_id = f"job_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
     job_uuid = str(uuid.uuid4())
-    status = "editing" if payload.job_type == "editing" else "pending"
+    # When advanced_mode + cached upsampled_prompt are both present, create
+    # as "editing" directly to avoid a race condition where the async task's
+    # quick WebSocket update gets overwritten by the HTTP response.
+    if payload.job_type == "editing":
+        status = "editing"
+    elif payload.advanced_mode and payload.upsampled_prompt:
+        status = "editing"
+    else:
+        status = "pending"
     upsampler_params = dict(payload.upsampler_params or {})
     upsampler_params.update({
         "_magic_prompt": payload.magic_prompt,
@@ -55,6 +63,12 @@ async def create_job(payload: JobCreate):
         "_is_json_mode": payload.is_json_mode,
     })
     steps = build_steps(payload.magic_prompt or payload.is_json_mode, payload.advanced_mode, "editing" if status == "editing" else "queued")
+    chat_messages = payload.chat_messages or []
+    if status == "editing" and payload.upsampled_prompt and not chat_messages:
+        chat_messages = [
+            {"role": "system", "content": "Visual Prompt Layout Chat Assistant."},
+            {"role": "assistant", "content": payload.upsampled_prompt},
+        ]
     with SessionLocal() as db:
         job = ActiveJob(
             job_id=job_id,
@@ -71,7 +85,7 @@ async def create_job(payload: JobCreate):
             provider_params=payload.provider_params or {},
             upsampler_params=upsampler_params,
             draft_json=payload.draft_json,
-            chat_messages=payload.chat_messages or [],
+            chat_messages=chat_messages,
             steps=steps,
         )
         db.add(job)

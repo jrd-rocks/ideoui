@@ -577,8 +577,14 @@ export class AppRoot extends LitElement {
         upsampled_prompt: params.bypassUpsample ? this.cachedUpsampledPrompt : null
       });
       this.parentUuid = '';
-      this.activeLeftTab = 'progress';
-      window.location.hash = '#/job/' + result.job_id;
+      const isEditing = result.job?.status === 'editing';
+      if (isEditing) {
+        this.activeLeftTab = 'generator';
+        window.location.hash = '#/editor/' + result.job_id;
+      } else {
+        this.activeLeftTab = 'progress';
+        window.location.hash = '#/job/' + result.job_id;
+      }
       this.scheduleSessionSave();
     } catch (error) {
       this.showToast(error.message, 'error');
@@ -812,8 +818,13 @@ export class AppRoot extends LitElement {
   onCloseLightbox() {
     this.closeRouteLightbox();
     if (this.currentRoute.includes('/lightbox/')) {
-      const next = this.currentRoute.replace(/\/lightbox\/\d+$/, '');
-      window.location.hash = next || '#/';
+      // History lightbox: #/history/<uuid>/lightbox/N → go back to #/history
+      if (this.currentRoute.startsWith('#/history/')) {
+        window.location.hash = '#/history';
+      } else {
+        const next = this.currentRoute.replace(/\/lightbox\/\d+$/, '');
+        window.location.hash = next || '#/';
+      }
     }
   }
 
