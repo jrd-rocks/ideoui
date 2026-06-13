@@ -1,6 +1,8 @@
 # IdeoUI - Ideogram 4 Studio
 
-IdeoUI is a private workspace designed to help you compose images using Ideogram v4. It integrates DeepSeek (via `deepseek-reasoner`) to help refine prompts and map layout elements. Instead of relying only on text prompts, it gives you a visual canvas where you can drag and drop bounding boxes to define where characters, text, or objects should appear. The workspace links this visual layout with Ideogram's spatial JSON schema, providing granular control over the generated image.
+IdeoUI is a private, web-based canvas for composing and generating images using Ideogram v4 and DeepSeek. You drag bounding boxes onto a canvas to position visual elements, which the app automatically translates into Ideogram's spatial JSON layout.
+
+*Obviously, this is 100% vibe-coded slop, degraded to a state where human maintainability is nearing 0; stability and updates are not guaranteed; it exists purely to serve my personal needs.*
 
 ---
 
