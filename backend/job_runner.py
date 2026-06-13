@@ -163,11 +163,10 @@ async def execute_server_job(job_id: str):
                 display = f"Step {step}/{total}"
                 update_job_record(job_id, display_text=display, progress_step="generating")
                 previews = data.get("previews")
-                if previews:
-                    collected_previews.extend(
-                        p for p in previews.values() if isinstance(p, list)
-                        for item in p
-                    )
+                if previews and isinstance(previews, dict):
+                    for step_b64s in previews.values():
+                        if isinstance(step_b64s, list):
+                            collected_previews.extend(step_b64s)
                 push_generation_progress(job_id, "step", {
                     "step": step, "total": total,
                     "previews": previews,
