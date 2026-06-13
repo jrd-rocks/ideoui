@@ -68,6 +68,18 @@ class GenericProvider(BaseProvider):
                     pass
             normalized[key] = val
 
+        # Filter out parameters whose visible_when conditions are not met
+        for key, schema in inputs.items():
+            visible_when = schema.get("visible_when")
+            if visible_when:
+                condition_met = True
+                for dep_key, expected_val in visible_when.items():
+                    if normalized.get(dep_key) != expected_val:
+                        condition_met = False
+                        break
+                if not condition_met:
+                    normalized[key] = None
+
         # Handle special types like aspect_ratio resolution to width/height
         for key, schema in inputs.items():
             if schema.get("type") == "aspect_ratio":

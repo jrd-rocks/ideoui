@@ -90,9 +90,8 @@ class HttpEngine:
         
         proxies_log = f" via proxy {kwargs['proxies']}" if "proxies" in kwargs else ""
         print(f"[HttpEngine] Non-streaming request to: {url}{proxies_log}", flush=True)
-        if config.get("logging", False):
-            safe_headers = {k: ("***" if any(x in k.lower() for x in ["api", "auth", "secret", "token"]) else v) for k, v in headers.items()}
-            print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json') or kwargs.get('params')}", flush=True)
+        safe_headers = {k: ("***" if any(x in k.lower() for x in ["api", "auth", "secret", "token"]) else v) for k, v in headers.items()}
+        print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json') or kwargs.get('params')}", flush=True)
             
         response = requests.request(method, url, headers=headers, **kwargs)
         if config.get("logging", False):
@@ -133,9 +132,8 @@ class HttpEngine:
         
         proxies_log = f" via proxy {kwargs['proxies']}" if "proxies" in kwargs else ""
         print(f"[HttpEngine] Streaming from: {url}{proxies_log}", flush=True)
-        if config.get("logging", False):
-            safe_headers = {k: ("***" if any(x in k.lower() for x in ["api", "auth", "secret", "token"]) else v) for k, v in headers.items()}
-            print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json') or kwargs.get('params')}", flush=True)
+        safe_headers = {k: ("***" if any(x in k.lower() for x in ["api", "auth", "secret", "token"]) else v) for k, v in headers.items()}
+        print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json') or kwargs.get('params')}", flush=True)
             
         self._active_response = requests.request(method, url, headers=headers, **kwargs)
         self._active_response.raise_for_status()
