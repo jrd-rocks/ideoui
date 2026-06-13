@@ -1,5 +1,7 @@
 extends = "../config.toml"
 display_name = "Ideogram Magic Prompt"
+abbreviation = "IG"
+fullname = "Ideogram Magic Prompt"
 type = "llm"
 engine = "http"
 logging = true

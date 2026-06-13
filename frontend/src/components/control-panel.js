@@ -282,7 +282,7 @@ export class ControlPanel extends LitElement {
               <select id="upsamplerSelect" ?disabled="${this.isEditing}" .value="${this.selectedUpsampler}" @change="${this.onUpsamplerChange}">
                 ${Object.entries(this.providerSchemas || {})
                   .filter(([, schema]) => schema.type === 'upsampler')
-                  .map(([id, schema]) => html`<option value="${id}" ?selected="${this.selectedUpsampler === id}">${schema.displayName}</option>`)}
+                  .map(([id, schema]) => html`<option value="${id}" ?selected="${this.selectedUpsampler === id}">${schema.fullname || schema.displayName}</option>`)}
               </select>
             </div>
             
@@ -293,7 +293,7 @@ export class ControlPanel extends LitElement {
                 <div class="template-select-wrapper ${showTemplates ? '' : 'hidden'}" id="templateSelectWrapper">
                   <label for="templateSelect" class="sub-label">Template Version</label>
                   <select id="templateSelect" ?disabled="${this.isEditing}" .value="${this.selectedTemplate}" @change="${this.onTemplateChange}">
-                    ${this.templates.map(t => html`<option value="${t}" ?selected="${this.selectedTemplate === t}">${t}</option>`)}
+                    ${this.templates.map(t => html`<option value="${t.id || t}" ?selected="${this.selectedTemplate === (t.id || t)}">${t.fullname || t}</option>`)}
                   </select>
                 </div>
               `;

@@ -1,5 +1,7 @@
 extends = ["_deepseek.toml", "../config.toml"]
 display_name = "DeepSeek"
+abbreviation = "DS"
+fullname = "DeepSeek"
 default = true
 
 [model]

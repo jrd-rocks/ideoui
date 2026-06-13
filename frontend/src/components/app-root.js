@@ -348,7 +348,8 @@ export class AppRoot extends LitElement {
       if (resp.ok) {
         this.templates = await resp.json();
         if (this.templates.length > 0) {
-          this.selectedTemplate = this.templates[0];
+          const first = this.templates[0];
+          this.selectedTemplate = typeof first === 'object' ? first.id : first;
         }
         this.apiOnline = true;
       } else {
@@ -962,6 +963,7 @@ export class AppRoot extends LitElement {
             .selectedElementIndex="${this.editorSelectedIndex}"
             .pinnedBoxIndex="${this.editorPinnedIndex}"
             .readOnlyEditor="${isInspector}"
+            .providerSchemas="${this.providerSchemas}"
             @switch-tab="${this.onSwitchTab}"
             @cancel-active-job="${() => this.removeJob(this.selectedJobId)}"
             @select-job="${this.onSelectJob}"

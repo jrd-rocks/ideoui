@@ -6,7 +6,8 @@ import './prompt-inspector.js';
 export class HistoryList extends LitElement {
   static properties = {
     historyItems: { type: Array },
-    showBboxes: { type: Boolean }
+    showBboxes: { type: Boolean },
+    providerSchemas: { type: Object }
   };
 
   createRenderRoot() {
@@ -17,6 +18,7 @@ export class HistoryList extends LitElement {
     super();
     this.historyItems = [];
     this.showBboxes = false;
+    this.providerSchemas = {};
   }
 
   reuse(item) {
@@ -104,6 +106,46 @@ export class HistoryList extends LitElement {
     };
   }
 
+  upsampleBadgeText(item) {
+    const upsamplerId = item.params?.upsampler;
+    const template = item.params?.upsampleTemplate;
+    
+    let upsamplerAbbr = '';
+    if (upsamplerId) {
+      const schema = this.providerSchemas?.[upsamplerId];
+      if (schema?.abbreviation) {
+        upsamplerAbbr = schema.abbreviation;
+      } else if (upsamplerId.includes('ideogram')) {
+        upsamplerAbbr = 'IG';
+      } else if (upsamplerId.includes('deepseek')) {
+        upsamplerAbbr = 'DS';
+      } else {
+        upsamplerAbbr = upsamplerId;
+      }
+    }
+    
+    let templateAbbr = '';
+    if (template) {
+      if (template === 'v3 (minimal)') {
+        templateAbbr = 'v3';
+      } else if (template === 'v4 (full)') {
+        templateAbbr = 'v4';
+      } else {
+        templateAbbr = template;
+      }
+    }
+
+    if (upsamplerAbbr && templateAbbr && upsamplerId !== 'llm_ideogram_magic') {
+      return `Magic ${upsamplerAbbr} (${templateAbbr})`;
+    } else if (upsamplerAbbr) {
+      return `Magic ${upsamplerAbbr}`;
+    } else if (templateAbbr) {
+      return `Magic (${templateAbbr})`;
+    } else {
+      return 'Magic';
+    }
+  }
+
   getTreeRoots() {
     if (!this.historyItems || this.historyItems.length === 0) {
       return [];
@@ -184,7 +226,7 @@ export class HistoryList extends LitElement {
             <div class="history-card-time-group">
               <span class="history-card-time">${timeStr}</span>
               ${item.upsampledPrompt ? html`
-                <span class="history-badge magic">✨ Magic (${item.params.upsampleTemplate || 'v1'})</span>
+                <span class="history-badge magic">✨ ${this.upsampleBadgeText(item)}</span>
               ` : ''}
               ${item.parentUuid ? (() => {
                 const parentItem = this.historyItems.find(h => h.uuid === item.parentUuid);

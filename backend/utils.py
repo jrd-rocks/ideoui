@@ -8,9 +8,7 @@ def clean_and_reorder_prompt_dict(caption: dict) -> dict:
 
     cleaned = {}
     
-    # Preserve aspect_ratio if present
-    if "aspect_ratio" in caption:
-        cleaned["aspect_ratio"] = caption["aspect_ratio"]
+    # Preserve aspect_ratio is removed since aspect_ratio is treated purely as metadata
         
     # 1. High level description
     if "high_level_description" in caption:

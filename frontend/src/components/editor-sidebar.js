@@ -63,7 +63,9 @@ export class EditorSidebar extends LitElement {
   parsePrompt(promptText) {
     try {
       const data = JSON.parse(promptText || '{}');
-      if (!data.aspect_ratio) data.aspect_ratio = "1:1";
+      if (data.aspect_ratio !== undefined) {
+        delete data.aspect_ratio;
+      }
       if (!data.high_level_description) data.high_level_description = "";
       if (!data.compositional_deconstruction) data.compositional_deconstruction = { background: "", elements: [] };
       if (!data.compositional_deconstruction.background) data.compositional_deconstruction.background = "";
@@ -71,7 +73,6 @@ export class EditorSidebar extends LitElement {
       return data;
     } catch (e) {
       return {
-        aspect_ratio: "1:1",
         high_level_description: "",
         compositional_deconstruction: { background: "", elements: [] }
       };
@@ -94,9 +95,6 @@ export class EditorSidebar extends LitElement {
 
   reorderPromptKeys(data) {
     const result = {};
-    if (data.aspect_ratio !== undefined) {
-      result.aspect_ratio = data.aspect_ratio;
-    }
     if (data.high_level_description !== undefined && data.high_level_description !== "") {
       result.high_level_description = data.high_level_description;
     }

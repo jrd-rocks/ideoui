@@ -63,10 +63,12 @@ export function aspectRatioFromProviderParams(params = {}) {
 }
 
 export function promptWithAspectRatio(promptText, aspectRatio) {
-  if (!promptText || !aspectRatio) return promptText;
+  if (!promptText) return promptText;
   try {
     const data = JSON.parse(promptText);
-    data.aspect_ratio = aspectRatio;
+    if (data.aspect_ratio !== undefined) {
+      delete data.aspect_ratio;
+    }
     return JSON.stringify(data);
   } catch (_) {
     return promptText;

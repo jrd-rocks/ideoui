@@ -4,13 +4,52 @@ CURR_DIR = Path(__file__).parent.parent.resolve()
 PROMPTS_DIR = CURR_DIR / "config" / "upsample-prompts"
 
 
+def load_meta(name: str) -> dict:
+    v_path = PROMPTS_DIR / f"{name}.txt"
+    if not v_path.exists():
+        return {}
+    try:
+        with open(v_path, "r", encoding="utf-8") as f:
+            raw = f.read()
+        
+        meta_lines = []
+        in_meta = False
+        for line in raw.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("[") and stripped.endswith("]"):
+                if stripped.lower() == "[meta]":
+                    in_meta = True
+                else:
+                    in_meta = False
+            elif in_meta:
+                meta_lines.append(line)
+        
+        meta = {}
+        for line in meta_lines:
+            if ":" in line:
+                k, v = line.split(":", 1)
+                meta[k.strip().lower()] = v.strip()
+        return meta
+    except Exception:
+        return {}
+
+
 def list_templates():
     if not PROMPTS_DIR.exists():
         PROMPTS_DIR.mkdir(parents=True, exist_ok=True)
-    templates = [f.stem for f in PROMPTS_DIR.glob("*.txt")]
-    if not templates:
-        return ["v1"]
-    return sorted(templates)
+    files = sorted(list(PROMPTS_DIR.glob("*.txt")), key=lambda f: f.stem)
+    if not files:
+        return [{"id": "v1", "fullname": "Standard V1", "abbreviation": "v1"}]
+        
+    results = []
+    for f in files:
+        meta = load_meta(f.stem)
+        results.append({
+            "id": f.stem,
+            "fullname": meta.get("fullname", f.stem),
+            "abbreviation": meta.get("abbreviation", f.stem),
+        })
+    return results
 
 
 def load_template_prompts(name: str):

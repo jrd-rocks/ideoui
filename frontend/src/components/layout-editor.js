@@ -5,6 +5,7 @@ import './bbox-canvas.js';
 export class LayoutEditor extends LitElement {
   static properties = {
     upsampledPrompt: { type: String },
+    aspectRatio: { type: String },
     backgroundImage: { type: String },
     selectedElementIndex: { type: Number },
     pinnedBoxIndex: { type: Number },
@@ -38,13 +39,14 @@ export class LayoutEditor extends LitElement {
   get parsedPrompt() {
     try {
       const data = JSON.parse(this.upsampledPrompt);
-      if (!data.aspect_ratio) data.aspect_ratio = "1:1";
+      if (data.aspect_ratio !== undefined) {
+        delete data.aspect_ratio;
+      }
       if (!data.compositional_deconstruction) data.compositional_deconstruction = { background: "", elements: [] };
       if (!data.compositional_deconstruction.elements) data.compositional_deconstruction.elements = [];
       return data;
     } catch (e) {
       return {
-        aspect_ratio: "1:1",
         compositional_deconstruction: { background: "", elements: [] }
       };
     }
@@ -196,7 +198,7 @@ export class LayoutEditor extends LitElement {
         <!-- Canvas takes all available vertical space -->
         <div class="editor-canvas-column">
           <bbox-canvas
-            .aspectRatio="${data.aspect_ratio}"
+            .aspectRatio="${this.aspectRatio || "1:1"}"
             .elements="${elements}"
             .selectedElementIndex="${this.selectedElementIndex}"
             .pinnedBoxIndex="${this.pinnedBoxIndex}"

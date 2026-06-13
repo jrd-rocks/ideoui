@@ -16,7 +16,8 @@ export class DisplayPanel extends LitElement {
     showBboxes: { type: Boolean },
     selectedElementIndex: { type: Number },
     pinnedBoxIndex: { type: Number },
-    readOnlyEditor: { type: Boolean }
+    readOnlyEditor: { type: Boolean },
+    providerSchemas: { type: Object }
   };
 
   createRenderRoot() {
@@ -152,6 +153,7 @@ export class DisplayPanel extends LitElement {
           <history-list 
             .historyItems="${this.historyItems}"
             .showBboxes="${this.showBboxes}"
+            .providerSchemas="${this.providerSchemas}"
             @reuse="${(e) => this.dispatchEvent(new CustomEvent('reuse-settings', { detail: e.detail }))}"
             @reuse-advanced="${(e) => this.dispatchEvent(new CustomEvent('reuse-advanced', { detail: e.detail }))}"
             @delete-item="${(e) => this.dispatchEvent(new CustomEvent('delete-history-item', { detail: e.detail }))}"
@@ -261,6 +263,7 @@ renderCurrentContent() {
     return html`
       <layout-editor
         .upsampledPrompt="${job.upsampledPrompt}"
+        .aspectRatio="${job.providerParams?.aspect_ratio || job.params?.providerParams?.aspect_ratio || job.params?.aspect_ratio || '1:1'}"
         .backgroundImage="${job.backgroundImage}"
         .selectedElementIndex="${this.selectedElementIndex}"
         .pinnedBoxIndex="${this.pinnedBoxIndex}"

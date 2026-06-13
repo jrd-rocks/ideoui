@@ -41,6 +41,8 @@ class GenericProvider(BaseProvider):
                 
         return {
             "displayName": self.get_display_name(),
+            "abbreviation": self.config.get("abbreviation"),
+            "fullname": self.config.get("fullname", self.get_display_name()),
             "type": t,
             "engine": self.config.get("engine"),
             "default": bool(self.config.get("default", False)),

@@ -1,4 +1,6 @@
 [META]
+abbreviation: v3
+fullname: Minimal (No layout)
 frozen: false
 description: Minimal prompt template - fills in the JSON structure with the original prompt near-verbatim. No bboxes, no style_description, no color palettes. Bare minimum for valid Ideogram 4 captions.
 thinking_mode: disabled
