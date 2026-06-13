@@ -269,7 +269,7 @@ export class ControlPanel extends LitElement {
 
           <div class="panel-section magic-prompt-section ${this.isEditing || this.isJsonMode ? 'hidden' : ''}">
             <div class="checkbox-wrapper">
-              <input type="checkbox" id="magicPromptToggle" ?disabled="${this.isEditing}" .checked="${this.magicPrompt}" @change="${this.onMagicToggle}">
+              <input type="checkbox" id="magicPromptToggle" ?disabled="${this.isEditing || this.bypassUpsample}" .checked="${this.magicPrompt}" @change="${this.onMagicToggle}">
               <label for="magicPromptToggle" class="checkbox-label">
                 <span class="checkbox-custom"></span>
                   <span class="label-title">Magic Prompt</span>
@@ -279,7 +279,7 @@ export class ControlPanel extends LitElement {
             <!-- Upsampler Provider Selection -->
             <div class="template-select-wrapper ${this.magicPrompt ? '' : 'hidden'}" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
               <label for="upsamplerSelect" class="sub-label">Upsampler Provider</label>
-              <select id="upsamplerSelect" ?disabled="${this.isEditing}" .value="${this.selectedUpsampler}" @change="${this.onUpsamplerChange}">
+              <select id="upsamplerSelect" ?disabled="${this.isEditing || this.bypassUpsample}" .value="${this.selectedUpsampler}" @change="${this.onUpsamplerChange}">
                 ${Object.entries(this.providerSchemas || {})
                   .filter(([, schema]) => schema.type === 'upsampler')
                   .map(([id, schema]) => html`<option value="${id}" ?selected="${this.selectedUpsampler === id}">${schema.fullname || schema.displayName}</option>`)}
@@ -292,7 +292,7 @@ export class ControlPanel extends LitElement {
               return html`
                 <div class="template-select-wrapper ${showTemplates ? '' : 'hidden'}" id="templateSelectWrapper">
                   <label for="templateSelect" class="sub-label">Template Version</label>
-                  <select id="templateSelect" ?disabled="${this.isEditing}" .value="${this.selectedTemplate}" @change="${this.onTemplateChange}">
+                  <select id="templateSelect" ?disabled="${this.isEditing || this.bypassUpsample}" .value="${this.selectedTemplate}" @change="${this.onTemplateChange}">
                     ${this.templates.map(t => html`<option value="${t.id || t}" ?selected="${this.selectedTemplate === (t.id || t)}">${t.fullname || t}</option>`)}
                   </select>
                 </div>

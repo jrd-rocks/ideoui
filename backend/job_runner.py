@@ -82,6 +82,29 @@ async def execute_server_job(job_id: str):
             advanced_mode = bool(upsampler_params.get("_advanced_mode"))
             is_json_mode = bool(upsampler_params.get("_is_json_mode"))
 
+        if advanced_mode and final_prompt:
+            with SessionLocal() as db:
+                db_job = db.query(ActiveJob).filter(ActiveJob.job_id == job_id).first()
+                chat_messages = db_job.chat_messages if db_job else []
+            if not chat_messages:
+                chat_messages = [
+                    {"role": "system", "content": "Visual Prompt Layout Chat Assistant."},
+                    {"role": "assistant", "content": final_prompt}
+                ]
+            state = update_job_record(
+                job_id,
+                raw_prompt=raw_prompt,
+                upsampled_prompt=final_prompt,
+                upsampler_params=upsampler_params,
+                chat_messages=chat_messages,
+                status="editing",
+                progress_step="editing",
+                display_text="Layout draft ready",
+                steps=build_steps(magic_prompt or is_json_mode, True, "editing"),
+            )
+            await push_job("job_update", state)
+            return
+
         if not final_prompt and (magic_prompt or is_json_mode):
             upsampler = get_upsampler_providers().get(upsampler_id or "deepseek")
             if not upsampler:

@@ -144,6 +144,11 @@
     /* Code Block & Prompt Inspector */
     --code-text: var(--accent-blue);
     --empty-icon-color: rgba(0, 0, 0, 0.08);
+    --select-bg: #ffffff;
+    --select-bg-focus: #ffffff;
+    --select-option-bg: #ffffff;
+    --magic-select-bg: #ffffff;
+    --magic-select-bg-focus: #ffffff;
 }
 
 body.dark-theme {
@@ -288,6 +293,11 @@ body.dark-theme {
     /* Code Block & Prompt Inspector */
     --code-text: #38bdf8;
     --empty-icon-color: rgba(255, 255, 255, 0.05);
+    --select-bg: #121420;
+    --select-bg-focus: #181b2a;
+    --select-option-bg: #121420;
+    --magic-select-bg: #201630;
+    --magic-select-bg-focus: #281b3c;
 }
 
 /* ==========================================================================
@@ -671,6 +681,13 @@ input[type="number"]:focus,
     box-shadow: var(--control-shadow-focus);
 }
 
+select {
+    background-color: var(--select-bg, var(--control-bg));
+}
+select:focus {
+    background-color: var(--select-bg-focus, var(--control-bg-focus));
+}
+
 textarea {
     width: 100%;
     height: 120px;
@@ -684,6 +701,16 @@ textarea {
     border: 1px dashed var(--tag-border);
     border-radius: 12px;
     padding: 0.75rem 1rem;
+}
+
+.magic-prompt-section .section-hint {
+    color: var(--tag-text);
+    opacity: 0.85;
+}
+
+.magic-prompt-section .sub-label {
+    color: var(--tag-text);
+    opacity: 0.9;
 }
 
 .template-select-wrapper {
@@ -776,8 +803,18 @@ select, input[type="number"] {
 }
 
 select option {
-    background-color: var(--card-bg);
+    background-color: var(--select-option-bg, var(--card-bg));
     color: var(--text-primary);
+}
+
+.magic-prompt-section select {
+    background-color: var(--magic-select-bg, var(--select-bg));
+}
+.magic-prompt-section select:focus {
+    background-color: var(--magic-select-bg-focus, var(--select-bg-focus));
+}
+.magic-prompt-section select option {
+    background-color: var(--magic-select-bg, var(--select-bg));
 }
 
 select:disabled, input[type="number"]:disabled, textarea:disabled, button:disabled {
@@ -811,6 +848,11 @@ select:disabled, input[type="number"]:disabled, textarea:disabled, button:disabl
 
 .generate-btn {
     position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    isolation: isolate;
+    transform: translateZ(0);
     background: var(--gradient-btn);
     color: white;
     border: none;
@@ -820,6 +862,7 @@ select:disabled, input[type="number"]:disabled, textarea:disabled, button:disabl
     font-size: 0.95rem;
     margin-top: 0.5rem;
     flex-shrink: 0;
+    overflow: hidden;
 }
 
 .generate-btn:hover {

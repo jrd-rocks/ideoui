@@ -100,6 +100,11 @@ export class AppRoot extends LitElement {
         if (job.status === 'completed' && previous !== 'completed') {
           this.loadHistory();
         }
+        if (job.id === this.selectedJobId && job.status === 'editing' && previous !== 'editing') {
+          if (window.location.hash !== `#/editor/${job.id}`) {
+            window.location.hash = `#/editor/${job.id}`;
+          }
+        }
         previousStatuses.set(job.id, job.status);
 
         // If lightbox is open and showing this active job, update its previews in real-time
