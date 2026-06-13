@@ -897,6 +897,7 @@ export class AppRoot extends LitElement {
         .prompt="${this.lightboxPrompt}"
         .seedLabel="${this.lightboxSeedLabel}"
         .item="${this.lightboxItem}"
+        .previews="${this.lightboxItem?.genPreviews || []}"
         .hidden="${this.lightboxHidden}"
         @close="${this.onCloseLightbox}"
         @reuse="${this.onReuseSettings}"

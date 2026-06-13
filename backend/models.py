@@ -13,6 +13,7 @@ class GenerationHistory(Base):
     raw_prompt = Column(Text, nullable=False)
     upsampled_prompt = Column(Text, nullable=True)
     images = Column(JSON, nullable=False)  # Array of R2 URL strings
+    previews_url = Column(Text, nullable=True)  # R2 URL to previews zip
     params = Column(JSON, nullable=False)  # Dictionary of settings parameters
 
 
@@ -37,6 +38,7 @@ class ActiveJob(Base):
     chat_messages = Column(JSON, nullable=True)
     steps = Column(JSON, nullable=True)
     images = Column(JSON, nullable=True)
+    previews_url = Column(Text, nullable=True)  # R2 URL to previews zip
     error_message = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)

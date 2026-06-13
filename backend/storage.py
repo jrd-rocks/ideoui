@@ -1,3 +1,7 @@
+import io
+import zipfile
+from typing import List
+
 import boto3
 from botocore.config import Config
 from backend.config import get_r2_config
@@ -50,4 +54,34 @@ def upload_image(image_bytes: bytes, filename: str) -> str:
         return f"{base_url}/{filename}"
     except Exception as e:
         print(f"[Storage] Failed to upload image to Cloudflare R2: {e}")
+        raise RuntimeError(f"R2 upload failed: {e}") from e
+
+
+def upload_previews_zip(preview_b64_list: List[str], filename: str) -> str:
+    """Zips base64-encoded preview JPEGs and uploads to R2. Returns public URL."""
+    import base64
+    try:
+        s3, bucket, public_url = get_s3_client()
+
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+            for i, b64 in enumerate(preview_b64_list):
+                zf.writestr(f"preview_{i:03d}.jpg", base64.b64decode(b64))
+        buf.seek(0)
+
+        s3.put_object(
+            Bucket=bucket,
+            Key=filename,
+            Body=buf.read(),
+            ContentType="application/zip"
+        )
+
+        if not public_url:
+            r2 = get_r2_config()
+            return f"https://{r2['account_id']}.r2.cloudflarestorage.com/{bucket}/{filename}"
+
+        base_url = public_url.rstrip("/")
+        return f"{base_url}/{filename}"
+    except Exception as e:
+        print(f"[Storage] Failed to upload previews zip to R2: {e}")
         raise RuntimeError(f"R2 upload failed: {e}") from e

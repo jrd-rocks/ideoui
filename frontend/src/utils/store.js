@@ -39,6 +39,7 @@ class QueueStore {
       providerParams: job.providerParams ?? job.provider_params ?? {},
       upsamplerParams: job.upsamplerParams ?? job.upsampler_params ?? {},
       draftJson: job.draftJson ?? job.draft_json ?? null,
+      previewsUrl: job.previewsUrl ?? job.previews_url ?? null,
       llmStream: job.llmStream ?? this.streams[job.id || job.job_id] ?? null,
       params: job.params || {}
     };

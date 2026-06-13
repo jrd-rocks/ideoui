@@ -8,7 +8,8 @@ export class ImageLightbox extends LitElement {
     seedLabel: { type: String },
     item: { type: Object },
     hidden: { type: Boolean },
-    showBboxes: { type: Boolean }
+    showBboxes: { type: Boolean },
+    previews: { type: Array }
   };
 
   createRenderRoot() {
@@ -23,6 +24,7 @@ export class ImageLightbox extends LitElement {
     this.seedLabel = '';
     this.item = null;
     this.showBboxes = false;
+    this.previews = [];
   }
 
   close() {
@@ -149,6 +151,13 @@ export class ImageLightbox extends LitElement {
           <div class="lightbox-prompt-container">
             <span class="lightbox-prompt-label">Prompt Idea</span>
             <div id="lightboxCaption" class="lightbox-caption">${this.prompt}</div>
+            ${this.previews && this.previews.length > 0 ? html`
+              <div class="lightbox-previews-filmstrip">
+                ${this.previews.map((src, i) => html`
+                  <img class="lightbox-preview-thumb" src="${src}" alt="Preview ${i + 1}">
+                `)}
+              </div>
+            ` : ''}
           </div>
           <div class="lightbox-row">
             <span class="lightbox-meta-badge" id="lightboxMeta">Seed: ${this.seedLabel}</span>

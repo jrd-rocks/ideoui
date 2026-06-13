@@ -61,6 +61,7 @@ def job_to_dict(job: ActiveJob) -> dict:
         "chatMessages": job.chat_messages or [],
         "draftJson": job.draft_json,
         "images": job.images,
+        "previewsUrl": job.previews_url,
         "error": job.error_message,
     }
 
@@ -119,6 +120,7 @@ def save_completed_history(job_id: str, images: list[str]):
             raw_prompt=job.raw_prompt,
             upsampled_prompt=job.upsampled_prompt,
             images=images,
+            previews_url=job.previews_url,
             params={
                 "provider": job.provider,
                 "upsampler": job.upsampler,

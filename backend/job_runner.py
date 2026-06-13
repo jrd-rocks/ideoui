@@ -8,6 +8,7 @@ from backend.database import SessionLocal
 from backend.job_state import build_steps, save_completed_history, update_job_record
 from backend.models import ActiveJob
 from backend.providers import get_generation_providers, get_upsampler_providers
+from backend.storage import upload_previews_zip
 from backend.utils import clean_and_reorder_prompt_json
 from backend.ws import finish_websocket_stream, push_generation_progress, push_job, websocket_stream_callback, ws_manager
 
@@ -153,6 +154,7 @@ async def execute_server_job(job_id: str):
         )
         await push_job("job_update", state)
         semaphore = provider_semaphores.setdefault(provider_id, asyncio.Semaphore(provider.config.get("max_simultaneous", 2)))
+        collected_previews = []
 
         def on_generation_progress(event_type, data):
             if event_type == "step":
@@ -160,9 +162,15 @@ async def execute_server_job(job_id: str):
                 total = data.get("total", 0)
                 display = f"Step {step}/{total}"
                 update_job_record(job_id, display_text=display, progress_step="generating")
+                previews = data.get("previews")
+                if previews:
+                    collected_previews.extend(
+                        p for p in previews.values() if isinstance(p, list)
+                        for item in p
+                    )
                 push_generation_progress(job_id, "step", {
                     "step": step, "total": total,
-                    "previews": data.get("previews"),
+                    "previews": previews,
                 })
             elif event_type == "status":
                 push_generation_progress(job_id, "status", {
@@ -179,9 +187,23 @@ async def execute_server_job(job_id: str):
                 images = await anyio.to_thread.run_sync(provider.execute, final_prompt or raw_prompt, provider_params)
 
         save_completed_history(job_id, images)
+        previews_url = None
+        if collected_previews:
+            import time, random
+            ts = int(time.time() * 1000)
+            rand_id = random.randint(100000, 999999)
+            zip_name = f"previews/{ts}_{rand_id}_previews.zip"
+            try:
+                previews_url = await anyio.to_thread.run_sync(
+                    upload_previews_zip, collected_previews, zip_name,
+                )
+                print(f"[Jobs] Uploaded previews zip: {previews_url}", flush=True)
+            except Exception as exc:
+                print(f"[Jobs] Failed to upload previews zip: {exc}", flush=True)
         state = update_job_record(
             job_id,
             images=images,
+            previews_url=previews_url,
             status="completed",
             progress_step="completed",
             display_text="Completed",
