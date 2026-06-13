@@ -227,9 +227,12 @@ class QueueStore {
     if (payload.progress_event === 'step') {
       updates.genStep = payload.step;
       updates.genTotal = payload.total;
-      if (payload.previews) {
-        updates.genPreviews = payload.previews.map(p => `data:image/jpeg;base64,${p}`);
-      }
+        if (payload.previews) {
+          const all = Object.values(payload.previews).flat();
+          if (all.length) {
+            updates.genPreviews = all.map(p => `data:image/jpeg;base64,${p}`);
+          }
+        }
     } else if (payload.progress_event === 'status') {
       updates.genStatus = payload.text;
     }
