@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List
 from backend.database import get_db
-from backend.models import GenerationHistory
+from backend.models import GenerationHistory, ActiveJob
 from backend.schemas import HistoryItemCreate
 
 router = APIRouter(prefix="/api/history", tags=["history"])
@@ -16,8 +17,67 @@ def history_item_to_dict(item: GenerationHistory):
         "rawPrompt": item.raw_prompt,
         "upsampledPrompt": item.upsampled_prompt,
         "images": item.images,
+        "previewsUrl": item.previews_url,
         "params": item.params,
     }
+
+
+@router.get("/{item_id}/previews/{image_index}")
+async def get_image_previews(item_id: str, image_index: int, db: Session = Depends(get_db)):
+    # Find history or active job
+    item = db.query(GenerationHistory).filter(GenerationHistory.uuid == item_id).first()
+    if not item:
+        item = db.query(ActiveJob).filter(
+            or_(ActiveJob.uuid == item_id, ActiveJob.job_id == item_id)
+        ).first()
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    previews_url = item.previews_url
+    if not previews_url:
+        return []
+
+    images = item.images or []
+    num_images = len(images)
+    if num_images == 0:
+        return []
+
+    if image_index < 0 or image_index >= num_images:
+        raise HTTPException(status_code=400, detail="Invalid image index")
+
+    import urllib.request
+    import anyio
+    import zipfile
+    import io
+    import base64
+
+    try:
+        def download_zip(url):
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return response.read()
+
+        zip_data = await anyio.to_thread.run_sync(download_zip, previews_url)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to download previews: {e}")
+
+    try:
+        previews = []
+        with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
+            namelist = sorted(zf.namelist())
+            for idx, name in enumerate(namelist):
+                if idx % num_images == image_index:
+                    with zf.open(name) as f:
+                        img_data = f.read()
+                        b64_str = base64.b64encode(img_data).decode("ascii")
+                        previews.append(f"data:image/jpeg;base64,{b64_str}")
+        return previews
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to process previews zip: {e}")
 
 
 @router.get("")
@@ -64,6 +124,7 @@ def create_history_item(item: HistoryItemCreate, db: Session = Depends(get_db)):
         raw_prompt=item.rawPrompt,
         upsampled_prompt=item.upsampledPrompt,
         images=cleaned_images,
+        previews_url=item.previewsUrl,
         params=item.params
     )
     db.add(db_item)

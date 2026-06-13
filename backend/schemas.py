@@ -9,6 +9,7 @@ class HistoryItemBase(BaseModel):
     upsampledPrompt: Optional[str] = Field(default=None, validation_alias=AliasChoices('upsampledPrompt', 'upsampled_prompt'))
     images: List[str]
     params: Dict[str, Any]
+    previewsUrl: Optional[str] = Field(default=None, validation_alias=AliasChoices('previewsUrl', 'previews_url'))
 
 class HistoryItemCreate(HistoryItemBase):
     pass

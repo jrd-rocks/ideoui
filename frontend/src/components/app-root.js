@@ -59,6 +59,7 @@ export class AppRoot extends LitElement {
     lightboxSeedLabel: { type: String },
     lightboxItem: { type: Object },
     lightboxHidden: { type: Boolean },
+    lightboxPreviews: { type: Array },
 
     // Active form values synced to control-panel
     prompt: { type: String },
@@ -97,6 +98,14 @@ export class AppRoot extends LitElement {
           this.loadHistory();
         }
         previousStatuses.set(job.id, job.status);
+
+        // If lightbox is open and showing this active job, update its previews in real-time
+        if (!this.lightboxHidden && this.lightboxItem && this.lightboxItem.id === job.id) {
+          this.lightboxItem = job;
+          if (job.genPreviews && job.genPreviews[this.lightboxIndex] !== undefined) {
+            this.lightboxPreviews = [job.genPreviews[this.lightboxIndex]];
+          }
+        }
       }
       this.requestUpdate();
     });
@@ -132,6 +141,7 @@ export class AppRoot extends LitElement {
     this.lightboxSeedLabel = '';
     this.lightboxItem = null;
     this.lightboxHidden = true;
+    this.lightboxPreviews = [];
 
     // Form defaults
     this.prompt = '';
@@ -223,6 +233,29 @@ export class AppRoot extends LitElement {
     return w && h ? `${w} / ${h}` : '1 / 1';
   }
 
+  async loadLightboxPreviews(item, index) {
+    this.lightboxPreviews = [];
+    if (!item) return;
+
+    const previewsUrl = item.previewsUrl || item.previews_url;
+    if (previewsUrl) {
+      try {
+        const itemId = item.uuid || item.id;
+        const response = await fetch(`/api/history/${encodeURIComponent(itemId)}/previews/${index}`);
+        if (response.ok) {
+          this.lightboxPreviews = await response.json();
+          this.requestUpdate();
+        }
+      } catch (e) {
+        console.warn("Failed to load previews:", e);
+      }
+    } else if (item.genPreviews) {
+      if (item.genPreviews[index] !== undefined) {
+        this.lightboxPreviews = [item.genPreviews[index]];
+      }
+    }
+  }
+
   openRouteLightbox(item, index) {
     if (!item || !item.images?.[index]) return;
     this.lightboxSrc = item.images[index];
@@ -232,11 +265,13 @@ export class AppRoot extends LitElement {
     this.lightboxItem = item;
     this.lightboxIndex = index;
     this.lightboxHidden = false;
+    this.loadLightboxPreviews(item, index);
   }
 
   closeRouteLightbox() {
     this.lightboxHidden = true;
     this.lightboxIndex = null;
+    this.lightboxPreviews = [];
   }
 
   clearMissingJobRoute(jobId) {
@@ -672,6 +707,7 @@ export class AppRoot extends LitElement {
     this.lightboxHidden = false;
     const idx = Number(e.detail.imgIdx || 0);
     this.lightboxIndex = idx;
+    this.loadLightboxPreviews(item, idx);
     if (item?.uuid) {
       if (this.activeTab === 'history' || this.currentRoute.startsWith('#/history')) {
         window.location.hash = `#/history/${item.uuid}/lightbox/${idx}`;
@@ -897,7 +933,7 @@ export class AppRoot extends LitElement {
         .prompt="${this.lightboxPrompt}"
         .seedLabel="${this.lightboxSeedLabel}"
         .item="${this.lightboxItem}"
-        .previews="${this.lightboxItem?.genPreviews || []}"
+        .previews="${this.lightboxPreviews || []}"
         .hidden="${this.lightboxHidden}"
         @close="${this.onCloseLightbox}"
         @reuse="${this.onReuseSettings}"

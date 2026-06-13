@@ -100,7 +100,7 @@ def build_steps(magic_prompt: bool, advanced_mode: bool, active: str = "queued")
     return steps
 
 
-def save_completed_history(job_id: str, images: list[str]):
+def save_completed_history(job_id: str, images: list[str], previews_url: str = None):
     with SessionLocal() as db:
         job = db.query(ActiveJob).filter(ActiveJob.job_id == job_id).first()
         if not job:
@@ -111,6 +111,10 @@ def save_completed_history(job_id: str, images: list[str]):
                 f"[History Save] History already existed for job_id={job.job_id} uuid={job.uuid}; keeping existing images={len(history.images or [])}",
                 flush=True,
             )
+            p_url = previews_url or job.previews_url
+            if p_url and not history.previews_url:
+                history.previews_url = p_url
+                db.commit()
             return
 
         history = GenerationHistory(
@@ -120,7 +124,7 @@ def save_completed_history(job_id: str, images: list[str]):
             raw_prompt=job.raw_prompt,
             upsampled_prompt=job.upsampled_prompt,
             images=images,
-            previews_url=job.previews_url,
+            previews_url=previews_url or job.previews_url,
             params={
                 "provider": job.provider,
                 "upsampler": job.upsampler,
