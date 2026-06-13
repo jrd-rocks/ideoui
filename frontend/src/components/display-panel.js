@@ -187,6 +187,7 @@ renderCurrentContent() {
     const loadingMsg = job.displayText || job.display_text || "Waiting for the next server update...";
     const steps = job.steps && job.steps.length ? job.steps : [{ name: loadingMsg, status: "active" }];
     const hasPreviews = job.genPreviews && job.genPreviews.length > 0 && job.status === "generating";
+    const stepLabel = job.genStep && job.genTotal ? `Step ${job.genStep}/${job.genTotal}` : '';
 
     return html`
       <!-- Loading State -->
