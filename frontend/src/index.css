@@ -1530,7 +1530,9 @@ job-queue {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-    max-height: 150px;
+    flex-grow: 1;
+    height: 100%;
+    max-height: unset;
     overflow-y: auto;
     padding-right: 4px;
     min-width: 0;
@@ -1540,6 +1542,7 @@ job-queue {
     flex-grow: 1;
     overflow-y: auto;
     min-height: 0;
+    max-height: unset;
 }
 
 .queue-item {
@@ -1563,6 +1566,22 @@ job-queue {
 .queue-item.selected {
     background: rgba(168, 85, 247, 0.08);
     border-color: rgba(168, 85, 247, 0.3);
+}
+
+.queue-item-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.queue-item.nested-item {
+    margin-left: 20px;
+    border-left: 3px solid rgba(168, 85, 247, 0.4);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.dark-theme .queue-item.nested-item {
+    background: rgba(0, 0, 0, 0.2);
 }
 
 .q-item-info {
@@ -1634,6 +1653,12 @@ job-queue {
     background: var(--status-red-bg);
     border: 1px solid var(--status-red-border);
     color: var(--status-red-text);
+}
+
+.q-badge.held {
+    background: rgba(234, 179, 8, 0.15);
+    border: 1px solid rgba(234, 179, 8, 0.4);
+    color: #eab308;
 }
 
 .q-item-actions {

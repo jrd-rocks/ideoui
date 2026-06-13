@@ -16,6 +16,27 @@ from backend.ws import finish_websocket_stream, push_generation_progress, push_j
 llm_semaphore: Optional[asyncio.Semaphore] = None
 provider_semaphores: dict[str, asyncio.Semaphore] = {}
 job_tasks: dict[str, asyncio.Task] = {}
+_hold_generation: bool = False
+
+def get_hold_generation() -> bool:
+    global _hold_generation
+    return _hold_generation
+
+def set_hold_generation(val: bool):
+    global _hold_generation
+    _hold_generation = val
+    print(f"[Jobs] hold_generation set to {_hold_generation}", flush=True)
+    if not _hold_generation:
+        resume_held_jobs()
+
+def resume_held_jobs():
+    with SessionLocal() as db:
+        held_jobs = db.query(ActiveJob).filter(ActiveJob.status == "held").order_by(ActiveJob.updated_at.asc()).all()
+        job_ids = [job.job_id for job in held_jobs]
+    if job_ids:
+        print(f"[Jobs] Resuming {len(job_ids)} held jobs", flush=True)
+        for job_id in job_ids:
+            schedule_job(job_id)
 
 
 def init_runner_semaphores():
@@ -166,6 +187,22 @@ async def execute_server_job(job_id: str):
         provider = generation_providers.get(provider_id)
         if not provider:
             raise ValueError(f"Unknown generation provider: {provider_id}")
+
+        if get_hold_generation():
+            print(f"[Jobs] Job {job_id} is held (hold_generation is True).", flush=True)
+            state = update_job_record(
+                job_id,
+                raw_prompt=raw_prompt,
+                upsampled_prompt=final_prompt,
+                upsampler_params=upsampler_params,
+                status="held",
+                progress_step="held",
+                display_text="Held in queue",
+                steps=build_steps(magic_prompt or is_json_mode, advanced_mode, "queued"),
+            )
+            await push_job("job_update", state)
+            return
+
         state = update_job_record(
             job_id,
             raw_prompt=raw_prompt,
@@ -220,7 +257,8 @@ async def execute_server_job(job_id: str):
             for step_key in sorted(collected_previews.keys()):
                 ordered_previews.extend(collected_previews[step_key])
 
-            import time, random
+            import time
+            import random
             ts = int(time.time() * 1000)
             rand_id = random.randint(100000, 999999)
             zip_name = f"previews/{ts}_{rand_id}_previews.zip"

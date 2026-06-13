@@ -1,7 +1,6 @@
 from typing import Any, Callable, Dict, List, Optional
 from backend.providers.base import BaseProvider
 from backend.providers.engines import ENGINES
-from backend.provider_loader import _resolve_templates
 
 class GenericProvider(BaseProvider):
     def __init__(self, provider_id: str, config: Dict[str, Any]):

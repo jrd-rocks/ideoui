@@ -14,6 +14,18 @@ STATIC_DIR = CURR_DIR / "static"
 
 router = APIRouter(tags=["system"])
 
+@router.get("/api/system/settings")
+def get_system_settings():
+    from backend.job_runner import get_hold_generation
+    return {"hold_generation": get_hold_generation()}
+
+@router.post("/api/system/settings")
+async def update_system_settings(request: Request):
+    data = await request.json()
+    if "hold_generation" in data:
+        from backend.job_runner import set_hold_generation
+        set_hold_generation(bool(data["hold_generation"]))
+    return {"status": "updated"}
 
 @router.get("/api/endpoints")
 def get_endpoints():
@@ -35,7 +47,7 @@ def provider_schemas():
 async def log_frontend_error(request: Request):
     try:
         data = await request.json()
-        print(f"\n[Frontend JSON Parse Failure]")
+        print("\n[Frontend JSON Parse Failure]")
         if data.get("url"):
             print(f"  URL: {data.get('url')}")
         if data.get("status"):

@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
-from typing import List
 from backend.database import get_db
 from backend.models import GenerationHistory, ActiveJob
 from backend.schemas import HistoryItemCreate
