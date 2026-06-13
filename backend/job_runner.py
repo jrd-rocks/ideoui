@@ -210,6 +210,7 @@ async def execute_server_job(job_id: str):
             display_text="Completed",
             steps=[{**step, "status": "completed"} for step in build_steps(magic_prompt or is_json_mode, advanced_mode)],
         )
+        print(f"[Jobs] update_job_record returned previewsUrl={state.get('previewsUrl')}", flush=True)
         await push_job("job_completed", state)
     except Exception as exc:
         print(f"[Jobs] Job {job_id} failed: {exc}", flush=True)
