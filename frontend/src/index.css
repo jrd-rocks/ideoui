@@ -1251,6 +1251,19 @@ bbox-canvas {
     cursor: se-resize !important;
 }
 
+.bbox-element.unboxed, .history-bbox-overlay.unboxed, .lightbox-bbox-overlay.unboxed {
+    border-radius: 0 50% 50% 50%;
+    transform: none;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    border-width: 2px;
+}
+
+.bbox-element.unboxed.active, .history-bbox-overlay.unboxed, .lightbox-bbox-overlay.unboxed {
+    box-shadow: 0 4px 12px var(--accent-purple-glow);
+}
+
 .bbox-element.pinned {
     border-style: dashed !important;
     border-color: var(--bbox-border);
@@ -1301,6 +1314,49 @@ bbox-canvas {
     padding: 1px 3px;
     line-height: 1;
     border-bottom-right-radius: 3px;
+}
+
+/* Unboxed containers for wrapping */
+.history-unboxed-container {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.history-unboxed-container .history-bbox-overlay.unboxed {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 22px;
+    height: 22px;
+    pointer-events: auto;
+}
+
+.lightbox-unboxed-container {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    right: 15px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    pointer-events: none;
+    z-index: 10;
+}
+
+.lightbox-unboxed-container .lightbox-bbox-overlay.unboxed {
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 36px;
+    height: 36px;
+    pointer-events: auto;
 }
 
 /* Lightbox Bounding Box Overlays */

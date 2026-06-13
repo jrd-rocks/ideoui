@@ -139,6 +139,20 @@ export class LayoutEditor extends LitElement {
     this.updatePrompt(data);
   }
 
+  toggleBoxedSelected() {
+    if (this.readOnly || this.selectedElementIndex === null) return;
+    const data = this.parsedPrompt;
+    const elements = data.compositional_deconstruction.elements || [];
+    const el = elements[this.selectedElementIndex];
+    if (!el) return;
+    if (el.bbox) {
+      delete el.bbox;
+    } else {
+      el.bbox = [350, 350, 650, 650];
+    }
+    this.updatePrompt(data);
+  }
+
   duplicateSelected() {
     if (this.readOnly || this.selectedElementIndex === null) return;
     const data = this.parsedPrompt;
@@ -219,6 +233,9 @@ export class LayoutEditor extends LitElement {
             </button>
             <button id="deleteBoxBtn" class="editor-btn-secondary" @click="${this.deleteSelected}" ?disabled="${this.readOnly || this.selectedElementIndex === null}" title="Delete selected box">
               Delete
+            </button>
+            <button id="toggleBoxBtn" class="editor-btn-secondary" @click="${this.toggleBoxedSelected}" ?disabled="${this.readOnly || this.selectedElementIndex === null}" title="Toggle bounding box">
+              ${this.selectedElementIndex !== null && elements[this.selectedElementIndex] && !elements[this.selectedElementIndex].bbox ? 'Box' : 'Unbox'}
             </button>
             <button id="addBoxBtn" class="editor-btn-secondary" @click="${this.addElement}" ?disabled="${this.readOnly}">
               ${icon('plus', 14)}

@@ -454,6 +454,19 @@ export class EditorSidebar extends LitElement {
     this.dispatchEvent(new CustomEvent('element-pinned', { detail: newPinnedIndex }));
   }
 
+  toggleBoxedElement(idx, e) {
+    e.stopPropagation();
+    const data = this.parsedPrompt;
+    const el = data.compositional_deconstruction.elements[idx];
+    if (!el) return;
+    if (el.bbox) {
+      delete el.bbox;
+    } else {
+      el.bbox = [350, 350, 650, 650];
+    }
+    this.updatePrompt(data);
+  }
+
   setSubtab(tab) {
     this._subtab = tab;
     this.requestUpdate();
@@ -561,6 +574,9 @@ export class EditorSidebar extends LitElement {
                       </select>
                     </div>
                     <div class="element-card-actions">
+                      <button class="element-card-btn box-toggle ${element.bbox ? 'boxed' : ''}" title="${element.bbox ? 'Unbox element' : 'Box element'}" @click="${(e) => this.toggleBoxedElement(idx, e)}">
+                        ${element.bbox ? icon('box', 12) : icon('circle', 12)}
+                      </button>
                       <button class="element-card-btn focus ${this.pinnedBoxIndex === idx ? 'pinned' : ''}" title="${this.pinnedBoxIndex === idx ? 'Pinned (Click to Unpin)' : 'Pin Focus on Canvas'}" @click="${(e) => this.togglePinElement(idx, e)}">
                         ${icon('search', 12)}
                       </button>

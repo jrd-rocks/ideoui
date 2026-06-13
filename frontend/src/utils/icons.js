@@ -10,7 +10,9 @@ const paths = {
   search: svg`<circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line>`,
   chevronDown: svg`<polyline points="6 9 12 15 18 9"></polyline>`,
   check: svg`<polyline points="20 6 9 17 4 12"></polyline>`,
-  info: svg`<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>`
+  info: svg`<circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>`,
+  box: svg`<rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>`,
+  circle: svg`<circle cx="12" cy="12" r="10"></circle>`
 };
 
 export function icon(name, size = 14) {
