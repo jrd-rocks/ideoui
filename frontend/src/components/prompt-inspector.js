@@ -25,11 +25,14 @@ export class PromptInspector extends LitElement {
     if (!this.upsampledPrompt) return html``;
 
     let displayContent = this.upsampledPrompt;
-    try {
-      const parsed = JSON.parse(this.upsampledPrompt);
-      displayContent = JSON.stringify(parsed, null, 2);
-    } catch (e) {
-      // Keep as-is if parsing fails
+    const trimmed = (this.upsampledPrompt || '').trim();
+    if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+        const parsed = JSON.parse(this.upsampledPrompt);
+        displayContent = JSON.stringify(parsed, null, 2);
+      } catch (e) {
+        // Keep as-is if parsing fails
+      }
     }
 
     return html`

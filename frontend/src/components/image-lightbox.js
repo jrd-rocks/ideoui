@@ -48,6 +48,10 @@ export class ImageLightbox extends LitElement {
     this.close();
   }
 
+  onPromptHover() {
+    this.dispatchEvent(new CustomEvent('hover-prompt'));
+  }
+
   onMouseMoveBbox(e) {
     const box = e.currentTarget;
     const tooltip = box.querySelector('.bbox-tooltip');
@@ -104,9 +108,12 @@ export class ImageLightbox extends LitElement {
 
     let parsed = null;
     if (this.showBboxes && this.item && this.item.upsampledPrompt) {
-      try {
-        parsed = JSON.parse(this.item.upsampledPrompt);
-      } catch (e) {}
+      const trimmed = this.item.upsampledPrompt.trim();
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          parsed = JSON.parse(this.item.upsampledPrompt);
+        } catch (e) {}
+      }
     }
     const elements = parsed?.compositional_deconstruction?.elements || [];
 
@@ -148,7 +155,7 @@ export class ImageLightbox extends LitElement {
           </div>
         </div>
         <div class="lightbox-bottom-bar">
-          <div class="lightbox-prompt-container">
+          <div class="lightbox-prompt-container" @mouseenter="${this.onPromptHover}">
             <span class="lightbox-prompt-label">Prompt Idea</span>
             <div id="lightboxCaption" class="lightbox-caption">${this.prompt}</div>
             ${this.previews && this.previews.length > 0 ? html`

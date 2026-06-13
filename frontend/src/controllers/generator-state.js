@@ -4,6 +4,12 @@ export function getDefaultProviderId(ctx) {
   return defaultEntry?.[0] || firstGeneration?.[0] || ctx.selectedEndpoint || '';
 }
 
+export function getDefaultUpsamplerId(ctx) {
+  const defaultEntry = Object.entries(ctx.providerSchemas || {}).find(([, schema]) => schema.type === 'upsampler' && schema.default);
+  const firstUpsampler = Object.entries(ctx.providerSchemas || {}).find(([, schema]) => schema.type === 'upsampler');
+  return defaultEntry?.[0] || firstUpsampler?.[0] || ctx.selectedUpsampler || '';
+}
+
 export function withProviderDefaults(ctx, providerId, params = {}) {
   const schema = ctx.providerSchemas?.[providerId];
   if (!schema) return { ...params };
@@ -25,6 +31,7 @@ export function resetGeneratorForm(ctx) {
   ctx.isJsonMode = false;
   ctx.parentUuid = '';
   ctx.selectedTemplate = settings.selectedTemplate || ctx.templates?.[0] || 'v1';
+  ctx.selectedUpsampler = settings.selectedUpsampler || getDefaultUpsamplerId(ctx);
   ctx.selectedEndpoint = provider;
   ctx.providerParams = withProviderDefaults(ctx, provider, settings.providerParams || {});
 }
@@ -76,6 +83,7 @@ export function applyHistoryItemToForm(ctx, item) {
   ctx.selectedEndpoint = provider;
   ctx.providerParams = withProviderDefaults(ctx, provider, providerParamsFromHistory(item));
   ctx.selectedTemplate = item?.params?.upsampleTemplate || item?.params?.upsamplerParams?.template || ctx.selectedTemplate || 'v1';
+  ctx.selectedUpsampler = item?.params?.upsampler || ctx.selectedUpsampler || getDefaultUpsamplerId(ctx);
   ctx.parentUuid = item?.uuid || '';
   ctx.advancedMode = false;
 
@@ -95,6 +103,7 @@ export function getSessionFormState(ctx) {
     advancedMode: ctx.advancedMode,
     isJsonMode: ctx.isJsonMode,
     selectedTemplate: ctx.selectedTemplate,
+    selectedUpsampler: ctx.selectedUpsampler,
     provider: ctx.selectedEndpoint,
     providerParams: ctx.providerParams
   };
@@ -105,6 +114,7 @@ export function captureLastGeneratorSettings(ctx) {
     magicPrompt: ctx.magicPrompt,
     advancedMode: ctx.advancedMode,
     selectedTemplate: ctx.selectedTemplate,
+    selectedUpsampler: ctx.selectedUpsampler,
     provider: ctx.selectedEndpoint,
     providerParams: { ...(ctx.providerParams || {}) }
   };

@@ -1,0 +1,8 @@
+extends = ["_deepseek.toml", "../config.toml"]
+display_name = "DeepSeek"
+default = true
+
+[model]
+name = "deepseek-v4-flash"
+[model.extra]
+reasoning_effort = "high"

@@ -1,0 +1,33 @@
+display_name = "DeepSeek"
+type = "llm"
+engine = "chat"
+max_simultaneous = 3
+allow_chat = true
+
+[auth]
+deepseek_api_key = ""
+[auth.headers]
+Authorization = "Bearer {{auth.deepseek_api_key}}"
+
+[request]
+method = "POST"
+base_url = "https://api.deepseek.com"
+path = "/chat/completions"
+format = "json_body"
+timeout = 180
+
+[model]
+name = "deepseek-reasoner"
+[model.extra]
+reasoning_effort = "high"
+thinking = { type = "enabled" }
+
+[streaming]
+enabled = true
+format = "sse"
+data_prefix = "data:"
+done_signal = "[DONE]"
+[streaming.delta]
+path = "choices[].delta"
+content_field = "content"
+reasoning_field = "reasoning_content"

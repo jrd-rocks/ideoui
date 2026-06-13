@@ -3,7 +3,7 @@ from typing import Optional
 
 import anyio
 
-from backend.config import get_deepseek_config
+
 from backend.database import SessionLocal
 from backend.job_state import build_steps, save_completed_history, update_job_record
 from backend.models import ActiveJob
@@ -20,8 +20,8 @@ job_tasks: dict[str, asyncio.Task] = {}
 
 def init_runner_semaphores():
     global llm_semaphore, provider_semaphores
-    ds_cfg = get_deepseek_config()
-    llm_limit = ds_cfg.get("max_simultaneous", 3)
+    upsamplers = get_upsampler_providers()
+    llm_limit = max([p.config.get("max_simultaneous", 3) for p in upsamplers.values()] + [3])
     llm_semaphore = asyncio.Semaphore(llm_limit)
 
     provider_semaphores = {}
@@ -37,8 +37,9 @@ def init_runner_semaphores():
 def get_llm_semaphore() -> asyncio.Semaphore:
     global llm_semaphore
     if llm_semaphore is None:
-        ds_cfg = get_deepseek_config()
-        llm_semaphore = asyncio.Semaphore(ds_cfg.get("max_simultaneous", 3))
+        upsamplers = get_upsampler_providers()
+        llm_limit = max([p.config.get("max_simultaneous", 3) for p in upsamplers.values()] + [3])
+        llm_semaphore = asyncio.Semaphore(llm_limit)
     return llm_semaphore
 
 

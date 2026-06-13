@@ -15,6 +15,7 @@ export class ControlPanel extends LitElement {
     selectedEndpoint: { type: String },
     providerSchemas: { type: Object },
     providerParams: { type: Object },
+    selectedUpsampler: { type: String },
     isEditing: { type: Boolean },
 
     jobQueue: { type: Array },
@@ -41,6 +42,7 @@ export class ControlPanel extends LitElement {
     this.selectedEndpoint = '';
     this.providerSchemas = {};
     this.providerParams = {};
+    this.selectedUpsampler = '';
     this.isEditing = false;
 
     this.jobQueue = [];
@@ -88,6 +90,11 @@ export class ControlPanel extends LitElement {
   onTemplateChange(e) {
     this.selectedTemplate = e.target.value;
     this.dispatchEvent(new CustomEvent('template-change', { detail: this.selectedTemplate }));
+  }
+
+  onUpsamplerChange(e) {
+    this.selectedUpsampler = e.target.value;
+    this.dispatchEvent(new CustomEvent('upsampler-change', { detail: this.selectedUpsampler }));
   }
 
   onAdvancedToggle(e) {
@@ -162,7 +169,7 @@ export class ControlPanel extends LitElement {
     return html`
       ${(schema.layout || []).map(row => html`
         <div class="panel-section" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0.75rem;">
-          ${row.map(cell => {
+          ${(row.fields || []).map(cell => {
             const definition = schema.inputs?.[cell.id];
             if (!definition || !this.isInputVisible(definition)) return html``;
             return html`
@@ -187,6 +194,7 @@ export class ControlPanel extends LitElement {
         magicPrompt: this.magicPrompt,
         bypassUpsample: this.bypassUpsample,
         selectedTemplate: this.selectedTemplate,
+        upsampler: this.selectedUpsampler,
         advancedMode: this.advancedMode,
         endpoint: this.selectedEndpoint,
         providerParams: this.providerParams,
@@ -268,12 +276,28 @@ export class ControlPanel extends LitElement {
               </label>
             </div>
             
-            <div class="template-select-wrapper ${this.magicPrompt ? '' : 'hidden'}" id="templateSelectWrapper">
-              <label for="templateSelect" class="sub-label">Template Version</label>
-              <select id="templateSelect" ?disabled="${this.isEditing}" .value="${this.selectedTemplate}" @change="${this.onTemplateChange}">
-                ${this.templates.map(t => html`<option value="${t}" ?selected="${this.selectedTemplate === t}">${t}</option>`)}
+            <!-- Upsampler Provider Selection -->
+            <div class="template-select-wrapper ${this.magicPrompt ? '' : 'hidden'}" style="margin-top: 0.5rem; margin-bottom: 0.5rem;">
+              <label for="upsamplerSelect" class="sub-label">Upsampler Provider</label>
+              <select id="upsamplerSelect" ?disabled="${this.isEditing}" .value="${this.selectedUpsampler}" @change="${this.onUpsamplerChange}">
+                ${Object.entries(this.providerSchemas || {})
+                  .filter(([, schema]) => schema.type === 'upsampler')
+                  .map(([id, schema]) => html`<option value="${id}" ?selected="${this.selectedUpsampler === id}">${schema.displayName}</option>`)}
               </select>
             </div>
+            
+            ${(() => {
+              const upsamplerSchema = this.providerSchemas?.[this.selectedUpsampler];
+              const showTemplates = this.magicPrompt && upsamplerSchema?.engine === 'chat';
+              return html`
+                <div class="template-select-wrapper ${showTemplates ? '' : 'hidden'}" id="templateSelectWrapper">
+                  <label for="templateSelect" class="sub-label">Template Version</label>
+                  <select id="templateSelect" ?disabled="${this.isEditing}" .value="${this.selectedTemplate}" @change="${this.onTemplateChange}">
+                    ${this.templates.map(t => html`<option value="${t}" ?selected="${this.selectedTemplate === t}">${t}</option>`)}
+                  </select>
+                </div>
+              `;
+            })()}
 
             <!-- Advanced Mode Toggle -->
             <div id="advancedModeContainer" class="advanced-mode-wrapper ${this.magicPrompt ? '' : 'hidden'}">

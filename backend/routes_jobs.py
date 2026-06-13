@@ -12,8 +12,7 @@ from backend.job_runner import cancel_job_task, get_llm_semaphore, schedule_job
 from backend.job_state import build_steps, job_to_dict, update_job_record
 from backend.json_helpers import strict_json_prompt
 from backend.models import ActiveJob
-from backend.providers import get_generation_providers, get_upsampler_providers
-from backend.providers.deepseek_provider import DeepSeekProvider
+from backend.providers import get_generation_providers, get_upsampler_providers, get_chat_providers
 from backend.schemas import JobCreate
 from backend.ws import finish_websocket_stream, push_job, websocket_stream_callback, ws_manager
 
@@ -175,7 +174,15 @@ async def chat_job(job_id: str, request: Request):
         db.commit()
 
     model_messages = editor_chat_messages(current_json, user_message or "")
-    provider = DeepSeekProvider("deepseek", {"name": "DeepSeek"})
+    chat_provider_id = body.get("chat_provider")
+    chat_providers = get_chat_providers()
+    if chat_provider_id and chat_provider_id in chat_providers:
+        provider = chat_providers[chat_provider_id]
+    elif chat_providers:
+        provider = next(iter(chat_providers.values()))
+    else:
+        raise HTTPException(status_code=400, detail="No chat-capable providers configured")
+        
     stream_emit = websocket_stream_callback(job_id, "chat")
     async with get_llm_semaphore():
         result = await anyio.to_thread.run_sync(provider.query, model_messages, stream_emit)

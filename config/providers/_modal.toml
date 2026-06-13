@@ -1,0 +1,135 @@
+display_name = "Modal"
+type = "diffusion"
+engine = "http"
+max_simultaneous = 2
+
+[auth]
+url = ""
+modal_key = ""
+modal_secret = ""
+[auth.headers]
+Modal-Key = "{{auth.modal_key}}"
+Modal-Secret = "{{auth.modal_secret}}"
+
+[request]
+method = "GET"
+format = "query_params"
+timeout = 600
+[request.fields]
+prompt = "{{runtime.prompt}}"
+seed = "{{inputs.seed}}"
+width = "{{inputs.width}}"
+height = "{{inputs.height}}"
+num_images_per_prompt = "{{inputs.image_count}}"
+prompt_upsampling = "false"
+sampler_preset = "{{inputs.sampler_preset}}"
+[request.optional_fields]
+n_steps = "{{inputs.steps}}"
+guidance_scale = "{{inputs.guidance}}"
+
+[response]
+format = "pickle"
+images_field = ""
+images_encoding = "bytes"
+
+[streaming]
+enabled = true
+format = "sse"
+data_prefix = "data: "
+type_field = "type"
+done_signal = ""
+[streaming.events]
+status = "status"
+step = "step"
+complete = "complete"
+error = "error"
+[streaming.result]
+field = "images"
+encoding = "base64"
+[streaming.error]
+field = "message"
+
+[inputs.sampler_preset]
+label = "Sampler Preset"
+type = "select"
+default = "V4_QUALITY_48"
+[[inputs.sampler_preset.options]]
+value = "V4_QUALITY_48"
+label = "Quality (48 steps)"
+[[inputs.sampler_preset.options]]
+value = "V4_DEFAULT_20"
+label = "Default (20 steps)"
+[[inputs.sampler_preset.options]]
+value = "V4_TURBO_12"
+label = "Turbo (12 steps)"
+[[inputs.sampler_preset.options]]
+value = "custom"
+label = "Custom Parameters"
+
+[inputs.aspect_ratio]
+label = "Aspect Ratio"
+type = "aspect_ratio"
+default = "1:1"
+
+[inputs.scale]
+label = "Resolution Scale"
+type = "select"
+default = "standard"
+[[inputs.scale.options]]
+value = "standard"
+label = "Standard"
+[[inputs.scale.options]]
+value = "2k"
+label = "2K (2x dimensions)"
+[[inputs.scale.options]]
+value = "4k"
+label = "4K (4x dimensions)"
+
+[inputs.steps]
+label = "Steps"
+type = "number"
+min = 1
+max = 150
+default = 48
+visible_when = { sampler_preset = "custom" }
+
+[inputs.guidance]
+label = "Guidance Scale"
+type = "number"
+min = 1
+max = 20
+step = 0.5
+default = 7
+visible_when = { sampler_preset = "custom" }
+
+[inputs.image_count]
+label = "Number of Images"
+type = "number"
+min = 1
+max = 4
+default = 4
+
+[inputs.seed]
+label = "Seed"
+type = "number"
+min = 0
+default = 0
+placeholder = "0 (random)"
+
+[[layout]]
+fields = [{ id = "sampler_preset", col_span = 1 }, { id = "aspect_ratio", col_span = 1 }]
+[[layout]]
+fields = [{ id = "scale", col_span = 2 }]
+[[layout]]
+fields = [{ id = "steps", col_span = 1 }, { id = "guidance", col_span = 1 }]
+[[layout]]
+fields = [{ id = "image_count", col_span = 1 }, { id = "seed", col_span = 1 }]
+
+[sizes]
+"1:1" = [1024, 1024]
+"16:9" = [1344, 768]
+"9:16" = [768, 1344]
+"5:4" = [1152, 896]
+"4:5" = [896, 1152]
+"3:2" = [1216, 832]
+"2:3" = [832, 1216]

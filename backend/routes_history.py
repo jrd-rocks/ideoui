@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List
@@ -78,6 +78,47 @@ async def get_image_previews(item_id: str, image_index: int, db: Session = Depen
         return previews
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to process previews zip: {e}")
+
+
+@router.get("/{item_id}/previews.zip")
+async def get_previews_zip(item_id: str, db: Session = Depends(get_db)):
+    # Find history or active job
+    item = db.query(GenerationHistory).filter(GenerationHistory.uuid == item_id).first()
+    if not item:
+        item = db.query(ActiveJob).filter(
+            or_(ActiveJob.uuid == item_id, ActiveJob.job_id == item_id)
+        ).first()
+
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    previews_url = item.previews_url
+    if not previews_url:
+        raise HTTPException(status_code=404, detail="No previews URL found")
+
+    import urllib.request
+    import anyio
+
+    try:
+        def download_zip(url):
+            req = urllib.request.Request(
+                url,
+                headers={'User-Agent': 'Mozilla/5.0'}
+            )
+            with urllib.request.urlopen(req, timeout=10) as response:
+                return response.read()
+
+        zip_data = await anyio.to_thread.run_sync(download_zip, previews_url)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to download previews zip: {e}")
+
+    return Response(
+        content=zip_data,
+        media_type="application/zip",
+        headers={
+            "Cache-Control": "public, max-age=31536000, immutable"
+        }
+    )
 
 
 @router.get("")

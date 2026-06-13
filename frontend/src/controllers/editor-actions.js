@@ -170,7 +170,8 @@ export async function sendEditorChat(ctx, text) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        messages: updatedMessages
+        messages: updatedMessages,
+        chat_provider: ctx.selectedChatProvider
       })
     });
 

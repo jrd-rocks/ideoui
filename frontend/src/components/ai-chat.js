@@ -3,7 +3,9 @@ import { LitElement, html } from 'lit';
 export class AiChat extends LitElement {
   static properties = {
     chatMessages: { type: Array },
-    isRefining: { type: Boolean }
+    isRefining: { type: Boolean },
+    chatProviders: { type: Array },
+    selectedChatProvider: { type: String }
   };
 
   createRenderRoot() {
@@ -14,6 +16,8 @@ export class AiChat extends LitElement {
     super();
     this.chatMessages = [];
     this.isRefining = false;
+    this.chatProviders = [];
+    this.selectedChatProvider = '';
   }
 
   updated(changedProperties) {
@@ -47,6 +51,10 @@ export class AiChat extends LitElement {
     }
   }
 
+  onProviderChange(e) {
+    this.dispatchEvent(new CustomEvent('chat-provider-change', { detail: e.target.value }));
+  }
+
   renderAssistantMessage(msg) {
     const messageContent = msg.content || '';
     const trimmed = messageContent.trim();
@@ -76,7 +84,21 @@ export class AiChat extends LitElement {
 
   render() {
     return html`
-      <div id="contentSubtabAiChat" class="subtab-content-panel">
+      <div id="contentSubtabAiChat" class="subtab-content-panel" style="padding-top: 0;">
+        <div style="padding: 0.5rem; background: var(--overlay-bg); border-bottom: 1px solid var(--overlay-border); margin-bottom: 0.5rem;">
+          <select 
+            class="editor-textarea-sm" 
+            style="height: 32px; padding: 0.25rem 0.5rem;"
+            .value="${this.selectedChatProvider}" 
+            @change="${this.onProviderChange}"
+            ?disabled="${this.isRefining || !this.chatProviders?.length}">
+            ${(!this.chatProviders || this.chatProviders.length === 0) ? html`
+              <option value="">No chat providers available</option>
+            ` : this.chatProviders.map(p => html`
+              <option value="${p.id}">${p.name}</option>
+            `)}
+          </select>
+        </div>
         <div class="ai-chat-log" id="aiChatLog">
           ${!this.chatMessages || this.chatMessages.length === 0 ? html`
             <div class="ai-message system">Ask the AI Assistant to refine the layout for you. You can instruct it in natural language!</div>

@@ -217,9 +217,12 @@ export class HistoryList extends LitElement {
             ${(item.images || []).map((imgUrl, imgIdx) => {
               let parsed = null;
               if (this.showBboxes && item.upsampledPrompt) {
-                try {
-                  parsed = JSON.parse(item.upsampledPrompt);
-                } catch (e) {}
+                const trimmed = item.upsampledPrompt.trim();
+                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                  try {
+                    parsed = JSON.parse(item.upsampledPrompt);
+                  } catch (e) {}
+                }
               }
               const elements = parsed?.compositional_deconstruction?.elements || [];
               return html`

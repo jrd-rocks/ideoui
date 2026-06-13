@@ -8,7 +8,9 @@ export class EditorSidebar extends LitElement {
     chatMessages: { type: Array },
     isRefining: { type: Boolean },
     selectedElementIndex: { type: Number },
-    pinnedBoxIndex: { type: Number }
+    pinnedBoxIndex: { type: Number },
+    chatProviders: { type: Array },
+    selectedChatProvider: { type: String }
   };
 
   createRenderRoot() {
@@ -595,6 +597,9 @@ export class EditorSidebar extends LitElement {
           <ai-chat
             .chatMessages="${this.chatMessages}"
             .isRefining="${this.isRefining}"
+            .chatProviders="${this.chatProviders}"
+            .selectedChatProvider="${this.selectedChatProvider}"
+            @chat-provider-change="${(e) => this.dispatchEvent(new CustomEvent('chat-provider-change', { detail: e.detail }))}"
             @send-chat="${(e) => this.dispatchEvent(new CustomEvent('send-chat', { detail: e.detail }))}">
           </ai-chat>
         </div>
