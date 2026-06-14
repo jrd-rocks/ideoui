@@ -100,16 +100,28 @@ export class JobQueue extends LitElement {
     return roots;
   }
 
-  /** Summarise what the children are doing, e.g. "1 generating, 2 held" */
+  /** Return status badge templates for the children, e.g. a HELD badge or GENERATING badge. */
   summariseChildren(children) {
+    // Priority order for display (most active first)
+    const priority = ['generating', 'upsampling', 'pending', 'held', 'failed', 'completed'];
     const counts = {};
     for (const child of children) {
       const s = child.job.status;
       counts[s] = (counts[s] || 0) + 1;
     }
-    return Object.entries(counts)
-      .map(([s, n]) => `${n} ${s}`)
-      .join(', ');
+    return priority
+      .filter(s => counts[s])
+      .map(s => {
+        const n = counts[s];
+        const label = n > 1 ? `${n}\u00d7 ${s}` : s;
+        if (s === 'generating') return html`<span class="q-badge generating pulse-blue">${label}</span>`;
+        if (s === 'upsampling') return html`<span class="q-badge upsampling pulse-purple">${label}</span>`;
+        if (s === 'held')       return html`<span class="q-badge held">${label}</span>`;
+        if (s === 'pending')    return html`<span class="q-badge pending">${label}</span>`;
+        if (s === 'failed')     return html`<span class="q-badge failed">${label}</span>`;
+        if (s === 'completed')  return html`<span class="q-badge completed">${label}</span>`;
+        return html`<span class="q-badge pending">${label}</span>`;
+      });
   }
 
   renderEditingParent(node) {
@@ -129,7 +141,7 @@ export class JobQueue extends LitElement {
             <div class="q-item-prompt editing-parent-prompt">${job.rawPrompt}</div>
             <div class="q-item-meta">
               <span class="q-badge editing">Editing</span>
-              ${childCount > 0 ? html`<span class="editing-child-summary">${childSummary}</span>` : ''}
+              ${childCount > 0 ? childSummary : ''}
             </div>
           </div>
           <div class="q-item-actions">

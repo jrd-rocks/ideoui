@@ -75,7 +75,10 @@ class HttpEngine:
 
         kwargs = {"timeout": req_cfg.get("timeout", 600)}
         if req_cfg.get("format") == "json_body":
-            kwargs["json"] = payload
+            kwargs["data"] = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            has_content_type = any(k.lower() == "content-type" for k in headers.keys())
+            if not has_content_type:
+                headers["Content-Type"] = "application/json; charset=utf-8"
         else:
             kwargs["params"] = payload
             
@@ -215,7 +218,7 @@ class HttpEngine:
             
         # Serialize back to string if it's a dict (e.g. Ideogram V4JsonPrompt)
         if isinstance(content, dict):
-            content = json.dumps(content)
+            content = json.dumps(content, ensure_ascii=False, separators=(",", ":"))
             
         content = clean_and_reorder_prompt_json(content)
         

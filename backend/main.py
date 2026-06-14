@@ -1,5 +1,18 @@
+import sys
 import time
 from datetime import datetime
+
+# Reconfigure stdout/stderr to use UTF-8 encoding (helps with Windows console encoding issues)
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError

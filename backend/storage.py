@@ -96,7 +96,7 @@ def upload_json(data: dict, filename: str) -> str:
     import json
     try:
         s3, bucket, public_url = get_s3_client()
-        json_str = json.dumps(data, indent=2)
+        json_str = json.dumps(data, ensure_ascii=False, indent=2)
         s3.put_object(
             Bucket=bucket,
             Key=filename,
