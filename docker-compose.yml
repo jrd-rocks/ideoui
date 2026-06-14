@@ -1,0 +1,33 @@
+services:
+  ideoui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config
+      - ./db:/app/db
+    environment:
+      - DATABASE_URL=sqlite:////app/db/ideoui.db
+      - S3_ENDPOINT_URL=http://garage:3900
+    depends_on:
+      - garage
+    restart: unless-stopped
+
+  garage:
+    image: dxflrs/garage:v2.3.0
+    command: server --single-node --default-bucket
+    ports:
+      - "3900:3900"
+      - "3902:3902"
+      - "3903:3903"
+    environment:
+      - GARAGE_CONFIG_FILE=/etc/garage.toml
+      - GARAGE_DEFAULT_ACCESS_KEY=GKgarageaccesskeyid1234
+      - GARAGE_DEFAULT_SECRET_KEY=garage_secret_key_12345678901234567890
+      - GARAGE_DEFAULT_BUCKET=ideoui
+    volumes:
+      - ./garage.toml:/etc/garage.toml
+      - ./r2_data:/var/lib/garage
+    restart: unless-stopped
