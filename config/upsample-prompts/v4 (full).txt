@@ -1,4 +1,6 @@
 [META]
+abbreviation: v4
+fullname: Full Detail V4
 frozen: false
 description: Full creative-director magic prompt — fills style_description with color_palette, element-level palettes, bboxes. Combines v2 energy with full Ideogram 4 schema coverage.
 thinking_mode: disabled

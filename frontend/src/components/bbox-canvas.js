@@ -168,10 +168,11 @@ export class BboxCanvas extends LitElement {
     if (pinnedIdx !== -1) {
       const boxEl = canvasEl.querySelector(`.bbox-element[data-index="${pinnedIdx}"]`);
       if (boxEl) {
+        const isUnboxed = boxEl.classList.contains('unboxed');
         const rect = boxEl.getBoundingClientRect();
         const distBR = Math.hypot(mouseX - rect.right, mouseY - rect.bottom);
         this._hoveredBoxIndex = pinnedIdx;
-        this._hoveredCorner = distBR < 30 ? 'bottom-right' : 'top-left';
+        this._hoveredCorner = (distBR < 30 && !isUnboxed) ? 'bottom-right' : 'top-left';
       } else {
         this._hoveredBoxIndex = null;
         this._hoveredCorner = null;
@@ -183,13 +184,14 @@ export class BboxCanvas extends LitElement {
     if (this.selectedElementIndex !== null) {
       const selectedBoxEl = canvasEl.querySelector(`.bbox-element[data-index="${this.selectedElementIndex}"]`);
       if (selectedBoxEl) {
+        const isUnboxed = selectedBoxEl.classList.contains('unboxed');
         const rect = selectedBoxEl.getBoundingClientRect();
         const isInside = mouseX >= rect.left && mouseX <= rect.right &&
                          mouseY >= rect.top && mouseY <= rect.bottom;
 
         if (isInside) {
           const distBR = Math.hypot(mouseX - rect.right, mouseY - rect.bottom);
-          if (distBR < 30) {
+          if (distBR < 30 && !isUnboxed) {
             this._hoveredBoxIndex = this.selectedElementIndex;
             this._hoveredCorner = 'bottom-right';
             return;
@@ -212,12 +214,13 @@ export class BboxCanvas extends LitElement {
 
       if (!isInside) return;
 
+      const isUnboxed = boxEl.classList.contains('unboxed');
       const distBR = Math.hypot(mouseX - rect.right, mouseY - rect.bottom);
       const distTL = Math.hypot(mouseX - rect.left, mouseY - rect.top);
 
       let dist;
       let corner;
-      if (distBR < 30) {
+      if (distBR < 30 && !isUnboxed) {
         dist = distBR;
         corner = 'bottom-right';
       } else {
@@ -257,9 +260,10 @@ export class BboxCanvas extends LitElement {
       const canvasEl = this.querySelector('#bboxCanvas');
       const boxEl = canvasEl?.querySelector(`.bbox-element[data-index="${idx}"]`);
       if (boxEl) {
+        const isUnboxed = boxEl.classList.contains('unboxed');
         const rect = boxEl.getBoundingClientRect();
         const distBR = Math.hypot(e.clientX - rect.right, e.clientY - rect.bottom);
-        if (distBR < 30) this.startResizing(idx, e);
+        if (distBR < 30 && !isUnboxed) this.startResizing(idx, e);
         else this.startMoving(idx, e);
       }
       return;
@@ -308,6 +312,8 @@ export class BboxCanvas extends LitElement {
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
       
+      if (!this.elements[index].bbox) return;
+
       const lPct = parseFloat(boxEl.style.left);
       const tPct = parseFloat(boxEl.style.top);
       const wPct = parseFloat(boxEl.style.width || boxWidth);
@@ -414,38 +420,51 @@ export class BboxCanvas extends LitElement {
                @mouseleave="${this.onCanvasMouseLeave}"
                @mousedown="${this.onCanvasMouseDown}">
             ${(this.elements || []).map((element, idx) => {
-              const bbox = element.bbox || [0, 0, 1000, 1000];
-              const y1 = bbox[0];
-              const x1 = bbox[1];
-              const y2 = bbox[2];
-              const x2 = bbox[3];
-
-              const top = y1 / 10;
-              const left = x1 / 10;
-              const width = (x2 - x1) / 10;
-              const height = (y2 - y1) / 10;
+              const isUnboxed = !element.bbox;
+              let styleStr = '';
+              if (isUnboxed) {
+                let unboxedIndex = 0;
+                for (let i = 0; i < idx; i++) {
+                  if (!this.elements[i].bbox) unboxedIndex++;
+                }
+                const cols = Math.max(1, Math.floor(((this._canvasWidth || 500) - 30) / 44));
+                const col = unboxedIndex % cols;
+                const row = Math.floor(unboxedIndex / cols);
+                const unboxedLeft = 15 + col * 44;
+                const unboxedTop = 15 + row * 44;
+                styleStr = `top: ${unboxedTop}px; left: ${unboxedLeft}px; width: 36px; height: 36px;`;
+              } else {
+                const bbox = element.bbox;
+                const top = bbox[0] / 10;
+                const left = bbox[1] / 10;
+                const width = (bbox[3] - bbox[1]) / 10;
+                const height = (bbox[2] - bbox[0]) / 10;
+                styleStr = `top: ${top}%; left: ${left}%; width: ${width}%; height: ${height}%;`;
+              }
 
               const isSelected = this.selectedElementIndex === idx;
               const isPinned = this.pinnedBoxIndex === idx;
 
               return html`
-                <div class="bbox-element ${isSelected ? 'active' : ''} ${this._hoveredBoxIndex === idx ? 'hovered' : ''} ${this._hoveredBoxIndex === idx && this._hoveredCorner === 'bottom-right' ? 'hovered-resize' : ''} ${isPinned ? 'pinned' : ''}" 
+                <div class="bbox-element ${isUnboxed ? 'unboxed' : ''} ${isSelected ? 'active' : ''} ${this._hoveredBoxIndex === idx ? 'hovered' : ''} ${this._hoveredBoxIndex === idx && this._hoveredCorner === 'bottom-right' && !isUnboxed ? 'hovered-resize' : ''} ${isPinned ? 'pinned' : ''}"
                      data-index="${idx}"
-                     style="top: ${top}%; left: ${left}%; width: ${width}%; height: ${height}%;"
+                     style="${styleStr}"
                      @mouseenter="${this.onMouseMoveBbox}"
                      @mousemove="${this.onMouseMoveBbox}">
-                  <span class="bbox-badge ${this._hoveredBoxIndex === idx && this._hoveredCorner === 'top-left' ? 'focus-hover' : ''}">${String(idx + 1).padStart(2, "0")}</span>
-                  <span class="bbox-label">
-                    ${element.type === 'text' 
-                      ? (element.text || '') 
-                      : (element.desc && element.desc.length > 20 ? element.desc.slice(0, 17) + '...' : (element.desc || 'Object'))}
-                  </span>
-                  <div class="bbox-resizer ${this._hoveredBoxIndex === idx && this._hoveredCorner === 'bottom-right' ? 'focus-hover' : ''}"></div>
+                  <span class="bbox-badge ${this._hoveredBoxIndex === idx && this._hoveredCorner === 'top-left' && !isUnboxed ? 'focus-hover' : ''}">${String(idx + 1).padStart(2, "0")}</span>
+                  ${!isUnboxed ? html`
+                    <span class="bbox-label">
+                      ${element.type === 'text'
+                        ? (element.text || '')
+                        : (element.desc && element.desc.length > 20 ? element.desc.slice(0, 17) + '...' : (element.desc || 'Object'))}
+                    </span>
+                    <div class="bbox-resizer ${this._hoveredBoxIndex === idx && this._hoveredCorner === 'bottom-right' ? 'focus-hover' : ''}"></div>
+                  ` : ''}
                   <div class="bbox-tooltip">
                     <div style="font-weight: 700; color: var(--accent-purple); text-transform: uppercase; font-size: 0.72rem; margin-bottom: 0.35rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.15rem;">Element #${idx + 1}</div>
                     <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Prompt:</span> "${element.text || element.desc || 'Object'}"</div>
                     <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Type:</span> ${element.type || 'obj'}</div>
-                    <div><span style="color: var(--text-secondary);">BBox:</span> [${bbox.join(', ')}]</div>
+                    <div><span style="color: var(--text-secondary);">BBox:</span> ${element.bbox ? `[${element.bbox.join(', ')}]` : 'None'}</div>
                   </div>
                 </div>
               `;

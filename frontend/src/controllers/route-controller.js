@@ -79,6 +79,10 @@ export function handleAppRoute(ctx, options = {}) {
     } else {
       ctx.loadHistory().then(() => ctx.openRouteLightbox(ctx.getHistoryItem(route.uuid), route.lightboxIndex));
     }
+  } else if (route.name === 'unknown') {
+    // Unrecognised route — redirect to home rather than silently showing wrong content
+    console.warn('[router] Unknown route, redirecting to home:', hash);
+    window.location.hash = '#/';
   } else {
     ctx.activeTab = 'current';
     ctx.closeRouteLightbox();

@@ -1,26 +1,16 @@
-[deepseek]
-api_key = ""
-model = "deepseek-reasoner"
-max_simultaneous = 3
-stream = true
-thinking_enabled = true
-reasoning_effort = "high"
-
-[[inference]]
-default = true
-type = "modal"
-name = "ideogram-fp8"
-url = "https://your-modal-endpoint.modal.run"
-proxy_auth_key = ""
-proxy_auth_secret = ""
-max_simultaneous = 2
-
 [database]
 url = "sqlite:////app/db/ideoui.db"
 
 [r2]
-account_id = "garage-local"
+account_id = ""
 access_key_id = "GKgarageaccesskeyid1234"
 secret_access_key = "garage_secret_key_12345678901234567890"
 bucket_name = "ideoui"
 public_url = "http://localhost:3902/ideoui"
+endpoint_url = "http://garage:3900"
+
+[auth]
+modal_key = ""
+modal_secret = ""
+deepseek_api_key = ""
+ideogram_api_key = ""

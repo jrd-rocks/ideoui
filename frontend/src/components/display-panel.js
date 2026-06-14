@@ -1,4 +1,5 @@
 import { LitElement, html } from 'lit';
+import { icon } from '../utils/icons.js';
 import './image-grid.js';
 import './prompt-inspector.js';
 import './layout-editor.js';
@@ -16,7 +17,8 @@ export class DisplayPanel extends LitElement {
     showBboxes: { type: Boolean },
     selectedElementIndex: { type: Number },
     pinnedBoxIndex: { type: Number },
-    readOnlyEditor: { type: Boolean }
+    readOnlyEditor: { type: Boolean },
+    providerSchemas: { type: Object }
   };
 
   createRenderRoot() {
@@ -152,6 +154,7 @@ export class DisplayPanel extends LitElement {
           <history-list 
             .historyItems="${this.historyItems}"
             .showBboxes="${this.showBboxes}"
+            .providerSchemas="${this.providerSchemas}"
             @reuse="${(e) => this.dispatchEvent(new CustomEvent('reuse-settings', { detail: e.detail }))}"
             @reuse-advanced="${(e) => this.dispatchEvent(new CustomEvent('reuse-advanced', { detail: e.detail }))}"
             @delete-item="${(e) => this.dispatchEvent(new CustomEvent('delete-history-item', { detail: e.detail }))}"
@@ -163,24 +166,77 @@ export class DisplayPanel extends LitElement {
   `;
 }
 
-renderCurrentContent() {
-  if (!this.selectedJob) {
-    return html`
-      <!-- Idle State -->
-      <div class="idle-state" id="idleState">
-        <div class="sparkles-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M12 3V4M12 20V21M4 12H3M21 12H20M18.364 5.636L17.657 6.343M6.343 17.657L5.636 18.364M18.364 18.364L17.657 17.657M6.343 5.636L5.636 6.343" stroke-linecap="round" stroke-linejoin="round"/>
-            <path d="M9.5 9.5L12 8.5L14.5 9.5L13.5 12L14.5 14.5L12 13.5L9.5 14.5L10.5 12L9.5 9.5Z" fill="currentColor"/>
-          </svg>
+  renderCurrentContent() {
+    if (!this.selectedJob) {
+      return html`
+        <!-- Idle State -->
+        <div class="idle-state" id="idleState">
+          <div class="idle-cursive-text">Ready to generate when you are</div>
         </div>
-        <h2>Create Something Amazing</h2>
-        <p>Enter a prompt, configure your parameters, and click Generate to see Ideogram 4's incredible layout and text rendering capabilities.</p>
+      `;
+    }
+
+  const job = this.selectedJob;
+
+  if (job.status === "held") {
+    const promptToShow = job.upsampledPrompt || job.rawPrompt || '';
+    const isJson = Boolean(job.upsampledPrompt);
+
+    return html`
+      <div class="held-job-detail">
+        <div class="held-job-header">
+          <span class="q-badge held">Held</span>
+          <h2>Held Generation Detail</h2>
+        </div>
+
+        <div class="held-job-body">
+          <div class="held-prompt-section">
+            <h4>Input Text Prompt</h4>
+            <div class="held-prompt-text">${job.rawPrompt}</div>
+          </div>
+
+          ${isJson ? html`
+            <div class="held-prompt-section expandable">
+              <h4>Upsampled JSON Prompt</h4>
+              <pre class="held-prompt-content json-format">${promptToShow}</pre>
+            </div>
+          ` : ''}
+
+          <div class="held-meta-section">
+            <h4>Parameters</h4>
+            <div class="held-params-grid">
+              <div class="param-item">
+                <span class="param-name">Endpoint</span>
+                <span class="param-value">${job.provider || 'default'}</span>
+              </div>
+              ${job.upsampler ? html`
+                <div class="param-item">
+                  <span class="param-name">Upsampler</span>
+                  <span class="param-value">${job.upsampler}</span>
+                </div>
+              ` : ''}
+              ${Object.entries(job.providerParams || {}).map(([k, v]) => {
+                const formattedKey = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                return html`
+                  <div class="param-item">
+                    <span class="param-name">${formattedKey}</span>
+                    <span class="param-value">${typeof v === 'object' ? JSON.stringify(v) : v}</span>
+                  </div>
+                `;
+              })}
+            </div>
+          </div>
+
+          <div class="held-actions-section">
+            <button class="action-btn primary-action" @click="${() => this.dispatchEvent(new CustomEvent('edit-held-job', { detail: job.id }))}">
+              <span class="btn-icon">${icon('edit', 14)}</span>
+              Advanced Layout Editor
+            </button>
+          </div>
+        </div>
       </div>
     `;
   }
-
-  const job = this.selectedJob;
 
   if (job.status === "pending" || job.status === "upsampling" || job.status === "upsampled" || job.status === "generating") {
     const loadingTitle = job.status === "pending" ? "Queued" : job.status === "generating" ? "Generating" : job.status === "upsampling" ? "Upsampling" : "Working";
@@ -261,6 +317,7 @@ renderCurrentContent() {
     return html`
       <layout-editor
         .upsampledPrompt="${job.upsampledPrompt}"
+        .aspectRatio="${job.providerParams?.aspect_ratio || job.params?.providerParams?.aspect_ratio || job.params?.aspect_ratio || '1:1'}"
         .backgroundImage="${job.backgroundImage}"
         .selectedElementIndex="${this.selectedElementIndex}"
         .pinnedBoxIndex="${this.pinnedBoxIndex}"

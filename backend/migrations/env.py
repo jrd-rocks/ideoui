@@ -11,7 +11,7 @@ from alembic import context
 
 from backend.config import get_database_url
 from backend.database import Base
-from backend.models import GenerationHistory  # Importing the module registers all model classes.
+import backend.models
 
 config = context.config
 

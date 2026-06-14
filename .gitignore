@@ -25,6 +25,7 @@ scratch/
 output/
 output_test/
 tmp/
+static/
 
 # Editors and operating systems
 .vscode/
@@ -37,3 +38,7 @@ Thumbs.db
 
 # Caches
 .cache/
+
+# Private provider configs
+config/providers/diffusion_fp8.toml
+config/providers/diffusion_nvfp4.toml

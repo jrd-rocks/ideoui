@@ -48,6 +48,10 @@ export class ImageLightbox extends LitElement {
     this.close();
   }
 
+  onPromptHover() {
+    this.dispatchEvent(new CustomEvent('hover-prompt'));
+  }
+
   onMouseMoveBbox(e) {
     const box = e.currentTarget;
     const tooltip = box.querySelector('.bbox-tooltip');
@@ -104,9 +108,12 @@ export class ImageLightbox extends LitElement {
 
     let parsed = null;
     if (this.showBboxes && this.item && this.item.upsampledPrompt) {
-      try {
-        parsed = JSON.parse(this.item.upsampledPrompt);
-      } catch (e) {}
+      const trimmed = this.item.upsampledPrompt.trim();
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          parsed = JSON.parse(this.item.upsampledPrompt);
+        } catch (e) {}
+      }
     }
     const elements = parsed?.compositional_deconstruction?.elements || [];
 
@@ -118,20 +125,19 @@ export class ImageLightbox extends LitElement {
         <div class="lightbox-image-wrapper">
           <div class="lightbox-image-container">
             <img class="lightbox-content" id="lightboxImg" src="${this.src}">
+            <!-- Boxed elements -->
             ${elements.map((element, idx) => {
-              const bbox = element.bbox || [0, 0, 1000, 1000];
-              const y1 = bbox[0];
-              const x1 = bbox[1];
-              const y2 = bbox[2];
-              const x2 = bbox[3];
-              const top = y1 / 10;
-              const left = x1 / 10;
-              const width = (x2 - x1) / 10;
-              const height = (y2 - y1) / 10;
+              if (!element.bbox) return '';
+              const bbox = element.bbox;
+              const top = bbox[0] / 10;
+              const left = bbox[1] / 10;
+              const width = (bbox[3] - bbox[1]) / 10;
+              const height = (bbox[2] - bbox[0]) / 10;
+              const styleStr = `top: ${top}%; left: ${left}%; width: ${width}%; height: ${height}%;`;
 
               return html`
                 <div class="lightbox-bbox-overlay" 
-                     style="top: ${top}%; left: ${left}%; width: ${width}%; height: ${height}%;"
+                     style="${styleStr}"
                      @mouseenter="${this.onMouseMoveBbox}"
                      @mousemove="${this.onMouseMoveBbox}">
                   <span class="lightbox-bbox-number">${idx + 1}</span>
@@ -140,15 +146,35 @@ export class ImageLightbox extends LitElement {
                     <div style="font-weight: 700; color: var(--accent-purple); text-transform: uppercase; font-size: 0.72rem; margin-bottom: 0.35rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.15rem;">Element #${idx + 1}</div>
                     <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Prompt:</span> "${element.text || element.desc || 'Object'}"</div>
                     <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Type:</span> ${element.type || 'obj'}</div>
-                    <div><span style="color: var(--text-secondary);">BBox:</span> [${bbox.join(', ')}]</div>
+                    <div><span style="color: var(--text-secondary);">BBox:</span> [${element.bbox.join(', ')}]</div>
                   </div>
                 </div>
               `;
             })}
+
+            <!-- Unboxed elements wrapping container -->
+            <div class="lightbox-unboxed-container">
+              ${elements.map((element, idx) => {
+                if (element.bbox) return '';
+                return html`
+                  <div class="lightbox-bbox-overlay unboxed"
+                       @mouseenter="${this.onMouseMoveBbox}"
+                       @mousemove="${this.onMouseMoveBbox}">
+                    <span class="lightbox-bbox-number">${idx + 1}</span>
+                    <div class="bbox-tooltip">
+                      <div style="font-weight: 700; color: var(--accent-purple); text-transform: uppercase; font-size: 0.72rem; margin-bottom: 0.35rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.15rem;">Element #${idx + 1}</div>
+                      <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Prompt:</span> "${element.text || element.desc || 'Object'}"</div>
+                      <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Type:</span> ${element.type || 'obj'}</div>
+                      <div><span style="color: var(--text-secondary);">BBox:</span> None</div>
+                    </div>
+                  </div>
+                `;
+              })}
+            </div>
           </div>
         </div>
         <div class="lightbox-bottom-bar">
-          <div class="lightbox-prompt-container">
+          <div class="lightbox-prompt-container" @mouseenter="${this.onPromptHover}">
             <span class="lightbox-prompt-label">Prompt Idea</span>
             <div id="lightboxCaption" class="lightbox-caption">${this.prompt}</div>
             ${this.previews && this.previews.length > 0 ? html`

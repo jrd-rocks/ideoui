@@ -39,6 +39,9 @@ export class AppRoot extends LitElement {
     selectedEndpoint: { type: String },
     providerSchemas: { type: Object },
     providerParams: { type: Object },
+    chatProviders: { type: Array },
+    selectedChatProvider: { type: String },
+    selectedUpsampler: { type: String },
 
     // Queue / Jobs
     jobQueue: { type: Array },
@@ -97,6 +100,11 @@ export class AppRoot extends LitElement {
         if (job.status === 'completed' && previous !== 'completed') {
           this.loadHistory();
         }
+        if (job.id === this.selectedJobId && job.status === 'editing' && previous !== 'editing') {
+          if (window.location.hash !== `#/editor/${job.id}`) {
+            window.location.hash = `#/editor/${job.id}`;
+          }
+        }
         previousStatuses.set(job.id, job.status);
 
         // If lightbox is open and showing this active job, update its previews in real-time
@@ -142,6 +150,7 @@ export class AppRoot extends LitElement {
     this.lightboxItem = null;
     this.lightboxHidden = true;
     this.lightboxPreviews = [];
+    this._previewsCache = new Map();
 
     // Form defaults
     this.prompt = '';
@@ -153,6 +162,9 @@ export class AppRoot extends LitElement {
     this.selectedEndpoint = '';
     this.providerSchemas = {};
     this.providerParams = {};
+    this.chatProviders = [];
+    this.selectedChatProvider = '';
+    this.selectedUpsampler = '';
     this.tabUuid = '';
     this._sessionSaveTimer = null;
 
@@ -190,6 +202,7 @@ export class AppRoot extends LitElement {
       await this.loadHistory();
       await this.loadTemplates();
       await this.loadProviderSchemas();
+      await this.loadChatProviders();
       await this.loadEndpoints();
       await queueStore.loadActiveJobs();
       queueStore.connect();
@@ -239,15 +252,52 @@ export class AppRoot extends LitElement {
 
     const previewsUrl = item.previewsUrl || item.previews_url;
     if (previewsUrl) {
+      const itemId = item.uuid || item.id;
+
+      if (!this._previewsCache) {
+        this._previewsCache = new Map();
+      }
+      const itemCache = this._previewsCache.get(itemId);
+      if (itemCache && itemCache[index]) {
+        this.lightboxPreviews = itemCache[index];
+        this.requestUpdate();
+        return;
+      }
+
       try {
-        const itemId = item.uuid || item.id;
-        const response = await fetch(`/api/history/${encodeURIComponent(itemId)}/previews/${index}`);
-        if (response.ok) {
-          this.lightboxPreviews = await response.json();
-          this.requestUpdate();
+        const response = await fetch(`/api/history/${encodeURIComponent(itemId)}/previews.zip`);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch previews ZIP: ${response.statusText}`);
         }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const uint8 = new Uint8Array(arrayBuffer);
+
+        const { unzipSync } = await import('fflate');
+        const unzipped = unzipSync(uint8);
+
+        const sortedNames = Object.keys(unzipped).sort();
+        const files = sortedNames.map(name => unzipped[name]);
+
+        const numImages = item.images ? item.images.length : 1;
+
+        const newItemCache = {};
+        for (let imgIdx = 0; imgIdx < numImages; imgIdx++) {
+          const idxPreviews = [];
+          for (let idx = 0; idx < files.length; idx++) {
+            if (idx % numImages === imgIdx) {
+              const blob = new Blob([files[idx]], { type: 'image/jpeg' });
+              idxPreviews.push(URL.createObjectURL(blob));
+            }
+          }
+          newItemCache[imgIdx] = idxPreviews;
+        }
+
+        this._previewsCache.set(itemId, newItemCache);
+        this.lightboxPreviews = newItemCache[index] || [];
+        this.requestUpdate();
       } catch (e) {
-        console.warn("Failed to load previews:", e);
+        console.warn("Failed to load/unzip previews client-side:", e);
       }
     } else if (item.genPreviews) {
       if (item.genPreviews[index] !== undefined) {
@@ -265,7 +315,14 @@ export class AppRoot extends LitElement {
     this.lightboxItem = item;
     this.lightboxIndex = index;
     this.lightboxHidden = false;
-    this.loadLightboxPreviews(item, index);
+
+    const previewsUrl = item.previewsUrl || item.previews_url;
+    const isCached = this._previewsCache && this._previewsCache.has(item.uuid || item.id);
+    if (!previewsUrl || isCached) {
+      this.loadLightboxPreviews(item, index);
+    } else {
+      this.lightboxPreviews = [];
+    }
   }
 
   closeRouteLightbox() {
@@ -296,7 +353,8 @@ export class AppRoot extends LitElement {
       if (resp.ok) {
         this.templates = await resp.json();
         if (this.templates.length > 0) {
-          this.selectedTemplate = this.templates[0];
+          const first = this.templates[0];
+          this.selectedTemplate = typeof first === 'object' ? first.id : first;
         }
         this.apiOnline = true;
       } else {
@@ -346,7 +404,26 @@ export class AppRoot extends LitElement {
     if (!this.selectedEndpoint) {
       this.selectedEndpoint = defaultEntry?.[0] || firstGeneration?.[0] || '';
     }
+    const defaultUpsampler = Object.entries(this.providerSchemas).find(([, schema]) => schema.type === 'upsampler' && schema.default);
+    const firstUpsampler = Object.entries(this.providerSchemas).find(([, schema]) => schema.type === 'upsampler');
+    if (!this.selectedUpsampler) {
+      this.selectedUpsampler = defaultUpsampler?.[0] || firstUpsampler?.[0] || '';
+    }
     this.providerParams = this.withProviderDefaults(this.selectedEndpoint, this.providerParams);
+  }
+
+  async loadChatProviders() {
+    try {
+      const resp = await fetch("/api/providers/chat");
+      if (resp.ok) {
+        this.chatProviders = await resp.json();
+        if (this.chatProviders.length > 0) {
+          this.selectedChatProvider = this.chatProviders[0].id;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load chat providers:", e);
+    }
   }
 
   withProviderDefaults(providerId, params = {}) {
@@ -490,7 +567,7 @@ export class AppRoot extends LitElement {
       const result = await queueStore.sendJobRequest({
         raw_prompt: params.prompt,
         provider: params.endpoint,
-        upsampler: 'deepseek',
+        upsampler: params.upsampler || this.selectedUpsampler || 'deepseek',
         parent_uuid: this.parentUuid || null,
         magic_prompt: Boolean(params.magicPrompt && !params.bypassUpsample),
         advanced_mode: Boolean(params.advancedMode),
@@ -500,8 +577,14 @@ export class AppRoot extends LitElement {
         upsampled_prompt: params.bypassUpsample ? this.cachedUpsampledPrompt : null
       });
       this.parentUuid = '';
-      this.activeLeftTab = 'progress';
-      window.location.hash = '#/job/' + result.job_id;
+      const isEditing = result.job?.status === 'editing';
+      if (isEditing) {
+        this.activeLeftTab = 'generator';
+        window.location.hash = '#/editor/' + result.job_id;
+      } else {
+        this.activeLeftTab = 'progress';
+        window.location.hash = '#/job/' + result.job_id;
+      }
       this.scheduleSessionSave();
     } catch (error) {
       this.showToast(error.message, 'error');
@@ -698,6 +781,18 @@ export class AppRoot extends LitElement {
     await this.loadHistory();
   }
 
+  async onEditHeldJob(e) {
+    const jobId = e.detail;
+    try {
+      queueStore.updateJob(jobId, { status: 'editing' });
+      await this.patchServerJob(jobId, { status: 'editing' });
+      this.activeLeftTab = 'generator';
+      window.location.hash = '#/editor/' + jobId;
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  }
+
   onOpenLightbox(e) {
     const { src, prompt, seed, item } = e.detail;
     this.lightboxSrc = src;
@@ -707,7 +802,14 @@ export class AppRoot extends LitElement {
     this.lightboxHidden = false;
     const idx = Number(e.detail.imgIdx || 0);
     this.lightboxIndex = idx;
-    this.loadLightboxPreviews(item, idx);
+    const previewsUrl = item.previewsUrl || item.previews_url;
+    const isCached = this._previewsCache && this._previewsCache.has(item.uuid || item.id);
+    if (!previewsUrl || isCached) {
+      this.loadLightboxPreviews(item, idx);
+    } else {
+      this.lightboxPreviews = [];
+    }
+
     if (item?.uuid) {
       if (this.activeTab === 'history' || this.currentRoute.startsWith('#/history')) {
         window.location.hash = `#/history/${item.uuid}/lightbox/${idx}`;
@@ -717,11 +819,24 @@ export class AppRoot extends LitElement {
     }
   }
 
+  onHoverPrompt() {
+    if (this.lightboxItem && this.lightboxIndex !== null) {
+      if (!this.lightboxPreviews || this.lightboxPreviews.length === 0) {
+        this.loadLightboxPreviews(this.lightboxItem, this.lightboxIndex);
+      }
+    }
+  }
+
   onCloseLightbox() {
     this.closeRouteLightbox();
     if (this.currentRoute.includes('/lightbox/')) {
-      const next = this.currentRoute.replace(/\/lightbox\/\d+$/, '');
-      window.location.hash = next || '#/';
+      // History lightbox: #/history/<uuid>/lightbox/N → go back to #/history
+      if (this.currentRoute.startsWith('#/history/')) {
+        window.location.hash = '#/history';
+      } else {
+        const next = this.currentRoute.replace(/\/lightbox\/\d+$/, '');
+        window.location.hash = next || '#/';
+      }
     }
   }
 
@@ -768,6 +883,10 @@ export class AppRoot extends LitElement {
     document.body.classList.add(`${nextTheme}-theme`);
     this.theme = nextTheme;
     localStorage.setItem('ideoui_theme', nextTheme);
+  }
+
+  onChatProviderChange(e) {
+    this.selectedChatProvider = e.detail;
   }
 
   render() {
@@ -839,6 +958,7 @@ export class AppRoot extends LitElement {
             .selectedEndpoint="${this.selectedEndpoint}"
             .providerSchemas="${this.providerSchemas}"
             .providerParams="${this.providerParams}"
+            .selectedUpsampler="${this.selectedUpsampler}"
             .isEditing="${showEditorSidebar}"
             .jobQueue="${this.jobQueue}"
             .selectedJobId="${this.selectedJobId}"
@@ -849,6 +969,7 @@ export class AppRoot extends LitElement {
             @magic-change="${this.onMagicChange}"
             @bypass-change="${this.onBypassChange}"
             @template-change="${this.onTemplateChange}"
+            @upsampler-change="${(e) => { this.selectedUpsampler = e.detail; this.scheduleSessionSave(); }}"
             @advanced-change="${this.onAdvancedChange}"
             @endpoint-change="${this.onEndpointChange}"
             @provider-params-change="${this.onProviderParamsChange}"
@@ -870,8 +991,10 @@ export class AppRoot extends LitElement {
             .selectedElementIndex="${this.editorSelectedIndex}"
             .pinnedBoxIndex="${this.editorPinnedIndex}"
             .readOnlyEditor="${isInspector}"
+            .providerSchemas="${this.providerSchemas}"
             @switch-tab="${this.onSwitchTab}"
             @cancel-active-job="${() => this.removeJob(this.selectedJobId)}"
+            @edit-held-job="${this.onEditHeldJob}"
             @select-job="${this.onSelectJob}"
             @cancel-job="${this.onCancelJob}"
             @clear-completed-jobs="${this.onClearCompletedJobs}"
@@ -899,6 +1022,9 @@ export class AppRoot extends LitElement {
                 .selectedElementIndex="${this.editorSelectedIndex}"
                 .pinnedBoxIndex="${this.editorPinnedIndex}"
                 .readOnly="${isInspector}"
+                .chatProviders="${this.chatProviders}"
+                .selectedChatProvider="${this.selectedChatProvider}"
+                @chat-provider-change="${this.onChatProviderChange}"
                 @update-prompt="${(e) => this.onUpdateEditorPrompt(e)}"
                 @send-chat="${this.onSendEditorChat}"
                 @element-selected="${(e) => { this.editorSelectedIndex = e.detail; this.requestUpdate(); }}"
@@ -937,7 +1063,8 @@ export class AppRoot extends LitElement {
         .hidden="${this.lightboxHidden}"
         @close="${this.onCloseLightbox}"
         @reuse="${this.onReuseSettings}"
-        @reuse-advanced="${this.onReuseAdvancedSettings}">
+        @reuse-advanced="${this.onReuseAdvancedSettings}"
+        @hover-prompt="${this.onHoverPrompt}">
       </image-lightbox>
     `;
   }

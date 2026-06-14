@@ -10,7 +10,6 @@ services:
       - ./db:/app/db
     environment:
       - DATABASE_URL=sqlite:////app/db/ideoui.db
-      - S3_ENDPOINT_URL=http://garage:3900
     depends_on:
       - garage
     restart: unless-stopped

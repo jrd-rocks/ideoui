@@ -1,0 +1,30 @@
+extends = "../config.toml"
+display_name = "Ideogram Magic Prompt"
+abbreviation = "IG"
+fullname = "Ideogram Magic Prompt"
+type = "llm"
+engine = "http"
+logging = true
+max_simultaneous = 2
+allow_chat = false
+needs_user_prompt = false
+
+[auth.headers]
+Api-Key = "{{auth.ideogram_api_key}}"
+
+[request]
+method = "POST"
+base_url = "https://api.ideogram.ai"
+path = "/v1/ideogram-v4/magic-prompt"
+format = "json_body"
+timeout = 60
+[request.fields]
+text_prompt = "{{runtime.raw_prompt}}"
+aspect_ratio = "{{inputs.aspect_ratio}}"
+
+[response]
+format = "json"
+content_field = "json_prompt"
+
+[streaming]
+enabled = false

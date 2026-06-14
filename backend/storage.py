@@ -12,7 +12,7 @@ def get_s3_client():
     if not r2["account_id"] or not r2["access_key_id"] or not r2["secret_access_key"] or not r2["bucket_name"]:
         raise ValueError("Cloudflare R2 configuration is missing credentials in ui/config/ui/config/config.toml.")
         
-    endpoint_url = os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
+    endpoint_url = r2.get("endpoint_url") or os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
     s3_client = boto3.client(
         service_name="s3",
         endpoint_url=endpoint_url,
@@ -49,7 +49,7 @@ def upload_image(image_bytes: bytes, filename: str) -> str:
         if not public_url:
             r2 = get_r2_config()
             # Garage/Minio specific URL fallback if public_url isn't set, not perfectly reliable but a fallback.
-            endpoint_url = os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
+            endpoint_url = r2.get("endpoint_url") or os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
             # Return endpoint URL fallback
             return f"{endpoint_url}/{bucket}/{filename}"
             
@@ -81,11 +81,36 @@ def upload_previews_zip(preview_b64_list: List[str], filename: str) -> str:
 
         if not public_url:
             r2 = get_r2_config()
-            endpoint_url = os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
+            endpoint_url = r2.get("endpoint_url") or os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
             return f"{endpoint_url}/{bucket}/{filename}"
 
         base_url = public_url.rstrip("/")
         return f"{base_url}/{filename}"
     except Exception as e:
         print(f"[Storage] Failed to upload previews zip to R2: {e}")
+        raise RuntimeError(f"R2 upload failed: {e}") from e
+
+
+def upload_json(data: dict, filename: str) -> str:
+    """Uploads json data dict to Cloudflare R2 and returns its public access URL."""
+    import json
+    try:
+        s3, bucket, public_url = get_s3_client()
+        json_str = json.dumps(data, indent=2)
+        s3.put_object(
+            Bucket=bucket,
+            Key=filename,
+            Body=json_str.encode("utf-8"),
+            ContentType="application/json"
+        )
+
+        if not public_url:
+            r2 = get_r2_config()
+            endpoint_url = r2.get("endpoint_url") or os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
+            return f"{endpoint_url}/{bucket}/{filename}"
+
+        base_url = public_url.rstrip("/")
+        return f"{base_url}/{filename}"
+    except Exception as e:
+        print(f"[Storage] Failed to upload JSON to Cloudflare R2: {e}")
         raise RuntimeError(f"R2 upload failed: {e}") from e

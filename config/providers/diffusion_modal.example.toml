@@ -1,0 +1,7 @@
+extends = ["_modal.toml", "../config.toml"]
+display_name = "Modal (Example)"
+default = true
+
+[auth]
+# Syntax: socks://<socks_ip>:<socks_port>|<modal_endpoint_url> OR just <modal_endpoint_url>
+url = "socks://127.0.0.1:1080|https://your-modal-app-web-inference-stream.modal.run"

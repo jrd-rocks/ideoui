@@ -125,7 +125,7 @@ export async function editorGenerate(ctx) {
     raw_prompt: editorJob.rawPrompt,
     provider: editorJob.provider || editorJob.params.endpoint || ctx.selectedEndpoint,
     upsampler: editorJob.upsampler || 'deepseek',
-    parent_uuid: editorJob.parentUuid || editorJob.uuid || null,
+    parent_uuid: editorJob.uuid || editorJob.parentUuid || null, // Always nest under the editing job itself if it has a uuid
     magic_prompt: false,
     advanced_mode: false,
     provider_params: providerParams,
@@ -133,7 +133,12 @@ export async function editorGenerate(ctx) {
     upsampled_prompt: upsampledPrompt,
     chat_messages: editorJob.chatMessages || []
   });
-  ctx.showToast(`Queued generation for "${editorJob.rawPrompt.substring(0, 30)}..."`, 'success');
+  const isHeld = result.held === true;
+  if (isHeld) {
+    ctx.showToast(`Generation held — will start when "Hold Generation" is released.`, 'info');
+  } else {
+    ctx.showToast(`Queued generation for "${editorJob.rawPrompt.substring(0, 30)}..."`, 'success');
+  }
   ctx.activeLeftTab = 'progress';
   window.location.hash = '#/job/' + result.job_id;
 }
@@ -170,7 +175,8 @@ export async function sendEditorChat(ctx, text) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         message: text,
-        messages: updatedMessages
+        messages: updatedMessages,
+        chat_provider: ctx.selectedChatProvider
       })
     });
 

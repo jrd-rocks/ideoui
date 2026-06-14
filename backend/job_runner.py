@@ -1,12 +1,14 @@
 import asyncio
+import os
+import json
 from typing import Optional
 
 import anyio
 
-from backend.config import get_deepseek_config
+
 from backend.database import SessionLocal
 from backend.job_state import build_steps, save_completed_history, update_job_record
-from backend.models import ActiveJob
+from backend.models import ActiveJob, SystemSetting
 from backend.providers import get_generation_providers, get_upsampler_providers
 from backend.storage import upload_previews_zip
 from backend.utils import clean_and_reorder_prompt_json
@@ -16,12 +18,47 @@ from backend.ws import finish_websocket_stream, push_generation_progress, push_j
 llm_semaphore: Optional[asyncio.Semaphore] = None
 provider_semaphores: dict[str, asyncio.Semaphore] = {}
 job_tasks: dict[str, asyncio.Task] = {}
+def get_hold_generation() -> bool:
+    try:
+        with SessionLocal() as db:
+            setting = db.query(SystemSetting).filter(SystemSetting.key == "hold_generation").first()
+            if setting:
+                return setting.value == "true"
+    except Exception as e:
+        print(f"[Jobs] Error reading settings from DB: {e}", flush=True)
+    return False
+
+def set_hold_generation(val: bool):
+    try:
+        with SessionLocal() as db:
+            setting = db.query(SystemSetting).filter(SystemSetting.key == "hold_generation").first()
+            val_str = "true" if val else "false"
+            if setting:
+                setting.value = val_str
+            else:
+                setting = SystemSetting(key="hold_generation", value=val_str)
+                db.add(setting)
+            db.commit()
+    except Exception as e:
+        print(f"[Jobs] Error writing settings to DB: {e}", flush=True)
+    print(f"[Jobs] hold_generation set to {val}", flush=True)
+    if not val:
+        resume_held_jobs()
+
+def resume_held_jobs():
+    with SessionLocal() as db:
+        held_jobs = db.query(ActiveJob).filter(ActiveJob.status == "held").order_by(ActiveJob.updated_at.asc()).all()
+        job_ids = [job.job_id for job in held_jobs]
+    if job_ids:
+        print(f"[Jobs] Resuming {len(job_ids)} held jobs", flush=True)
+        for job_id in job_ids:
+            schedule_job(job_id)
 
 
 def init_runner_semaphores():
     global llm_semaphore, provider_semaphores
-    ds_cfg = get_deepseek_config()
-    llm_limit = ds_cfg.get("max_simultaneous", 3)
+    upsamplers = get_upsampler_providers()
+    llm_limit = max([p.config.get("max_simultaneous", 3) for p in upsamplers.values()] + [3])
     llm_semaphore = asyncio.Semaphore(llm_limit)
 
     provider_semaphores = {}
@@ -37,8 +74,9 @@ def init_runner_semaphores():
 def get_llm_semaphore() -> asyncio.Semaphore:
     global llm_semaphore
     if llm_semaphore is None:
-        ds_cfg = get_deepseek_config()
-        llm_semaphore = asyncio.Semaphore(ds_cfg.get("max_simultaneous", 3))
+        upsamplers = get_upsampler_providers()
+        llm_limit = max([p.config.get("max_simultaneous", 3) for p in upsamplers.values()] + [3])
+        llm_semaphore = asyncio.Semaphore(llm_limit)
     return llm_semaphore
 
 
@@ -80,6 +118,29 @@ async def execute_server_job(job_id: str):
             magic_prompt = bool(upsampler_params.get("_magic_prompt"))
             advanced_mode = bool(upsampler_params.get("_advanced_mode"))
             is_json_mode = bool(upsampler_params.get("_is_json_mode"))
+
+        if advanced_mode and final_prompt:
+            with SessionLocal() as db:
+                db_job = db.query(ActiveJob).filter(ActiveJob.job_id == job_id).first()
+                chat_messages = db_job.chat_messages if db_job else []
+            if not chat_messages:
+                chat_messages = [
+                    {"role": "system", "content": "Visual Prompt Layout Chat Assistant."},
+                    {"role": "assistant", "content": final_prompt}
+                ]
+            state = update_job_record(
+                job_id,
+                raw_prompt=raw_prompt,
+                upsampled_prompt=final_prompt,
+                upsampler_params=upsampler_params,
+                chat_messages=chat_messages,
+                status="editing",
+                progress_step="editing",
+                display_text="Layout draft ready",
+                steps=build_steps(magic_prompt or is_json_mode, True, "editing"),
+            )
+            await push_job("job_update", state)
+            return
 
         if not final_prompt and (magic_prompt or is_json_mode):
             upsampler = get_upsampler_providers().get(upsampler_id or "deepseek")
@@ -142,6 +203,22 @@ async def execute_server_job(job_id: str):
         provider = generation_providers.get(provider_id)
         if not provider:
             raise ValueError(f"Unknown generation provider: {provider_id}")
+
+        if get_hold_generation():
+            print(f"[Jobs] Job {job_id} is held (hold_generation is True).", flush=True)
+            state = update_job_record(
+                job_id,
+                raw_prompt=raw_prompt,
+                upsampled_prompt=final_prompt,
+                upsampler_params=upsampler_params,
+                status="held",
+                progress_step="held",
+                display_text="Held in queue",
+                steps=build_steps(magic_prompt or is_json_mode, advanced_mode, "queued"),
+            )
+            await push_job("job_update", state)
+            return
+
         state = update_job_record(
             job_id,
             raw_prompt=raw_prompt,
@@ -196,7 +273,8 @@ async def execute_server_job(job_id: str):
             for step_key in sorted(collected_previews.keys()):
                 ordered_previews.extend(collected_previews[step_key])
 
-            import time, random
+            import time
+            import random
             ts = int(time.time() * 1000)
             rand_id = random.randint(100000, 999999)
             zip_name = f"previews/{ts}_{rand_id}_previews.zip"
@@ -208,7 +286,7 @@ async def execute_server_job(job_id: str):
             except Exception as exc:
                 print(f"[Jobs] Failed to upload previews zip: {exc}", flush=True)
 
-        save_completed_history(job_id, images, previews_url=previews_url)
+        await save_completed_history(job_id, images, previews_url=previews_url)
 
         print(f"[Jobs] About to update job with previews_url={previews_url}", flush=True)
         state = update_job_record(

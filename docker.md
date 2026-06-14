@@ -16,13 +16,13 @@ IdeoUI can be deployed easily using Docker and Docker Compose. This deployment u
    url = "sqlite:////app/db/ideoui.db"
 
    [r2]
-   account_id = "garage-local"  # This is ignored by the endpoint override
+   account_id = ""
    access_key_id = "GKgarageaccesskeyid1234"
    secret_access_key = "garage_secret_key_12345678901234567890"
    bucket_name = "ideoui"
    public_url = "http://localhost:3902/ideoui"
+   endpoint_url = "http://garage:3900"
    ```
-   *Note: In the Docker environment, the R2 endpoint URL is overridden via environment variables in `docker-compose.yml` to point to the local Garage instance.*
 
 2. **Run with Docker Compose:**
    ```bash

@@ -1,4 +1,6 @@
 [META]
+abbreviation: v1
+fullname: Standard V1
 frozen: false
 description: Slim single-shot magic prompt — splatter planning + v15 output discipline, deduped for faster inference. Thinking off.
 thinking_mode: disabled

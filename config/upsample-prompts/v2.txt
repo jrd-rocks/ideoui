@@ -1,3 +1,7 @@
+[META]
+abbreviation: v2
+fullname: Refined V2
+
 [SYSTEM]
 Ideogram v4 needs prompts to be in a specific JSON format so that it won't accidently flag the safety filter and so that objects will be organized in the image correctly with bounding boxes. Make sure to start your prompt with "cinematic photograph" or some such or there's a good chance it'll try to make something artsy or illustrative.
 

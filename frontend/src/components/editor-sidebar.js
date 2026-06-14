@@ -8,7 +8,9 @@ export class EditorSidebar extends LitElement {
     chatMessages: { type: Array },
     isRefining: { type: Boolean },
     selectedElementIndex: { type: Number },
-    pinnedBoxIndex: { type: Number }
+    pinnedBoxIndex: { type: Number },
+    chatProviders: { type: Array },
+    selectedChatProvider: { type: String }
   };
 
   createRenderRoot() {
@@ -61,7 +63,9 @@ export class EditorSidebar extends LitElement {
   parsePrompt(promptText) {
     try {
       const data = JSON.parse(promptText || '{}');
-      if (!data.aspect_ratio) data.aspect_ratio = "1:1";
+      if (data.aspect_ratio !== undefined) {
+        delete data.aspect_ratio;
+      }
       if (!data.high_level_description) data.high_level_description = "";
       if (!data.compositional_deconstruction) data.compositional_deconstruction = { background: "", elements: [] };
       if (!data.compositional_deconstruction.background) data.compositional_deconstruction.background = "";
@@ -69,7 +73,6 @@ export class EditorSidebar extends LitElement {
       return data;
     } catch (e) {
       return {
-        aspect_ratio: "1:1",
         high_level_description: "",
         compositional_deconstruction: { background: "", elements: [] }
       };
@@ -92,9 +95,6 @@ export class EditorSidebar extends LitElement {
 
   reorderPromptKeys(data) {
     const result = {};
-    if (data.aspect_ratio !== undefined) {
-      result.aspect_ratio = data.aspect_ratio;
-    }
     if (data.high_level_description !== undefined && data.high_level_description !== "") {
       result.high_level_description = data.high_level_description;
     }
@@ -454,6 +454,19 @@ export class EditorSidebar extends LitElement {
     this.dispatchEvent(new CustomEvent('element-pinned', { detail: newPinnedIndex }));
   }
 
+  toggleBoxedElement(idx, e) {
+    e.stopPropagation();
+    const data = this.parsedPrompt;
+    const el = data.compositional_deconstruction.elements[idx];
+    if (!el) return;
+    if (el.bbox) {
+      delete el.bbox;
+    } else {
+      el.bbox = [350, 350, 650, 650];
+    }
+    this.updatePrompt(data);
+  }
+
   setSubtab(tab) {
     this._subtab = tab;
     this.requestUpdate();
@@ -561,6 +574,9 @@ export class EditorSidebar extends LitElement {
                       </select>
                     </div>
                     <div class="element-card-actions">
+                      <button class="element-card-btn box-toggle ${element.bbox ? 'boxed' : ''}" title="${element.bbox ? 'Unbox element' : 'Box element'}" @click="${(e) => this.toggleBoxedElement(idx, e)}">
+                        ${element.bbox ? icon('box', 12) : icon('circle', 12)}
+                      </button>
                       <button class="element-card-btn focus ${this.pinnedBoxIndex === idx ? 'pinned' : ''}" title="${this.pinnedBoxIndex === idx ? 'Pinned (Click to Unpin)' : 'Pin Focus on Canvas'}" @click="${(e) => this.togglePinElement(idx, e)}">
                         ${icon('search', 12)}
                       </button>
@@ -595,6 +611,9 @@ export class EditorSidebar extends LitElement {
           <ai-chat
             .chatMessages="${this.chatMessages}"
             .isRefining="${this.isRefining}"
+            .chatProviders="${this.chatProviders}"
+            .selectedChatProvider="${this.selectedChatProvider}"
+            @chat-provider-change="${(e) => this.dispatchEvent(new CustomEvent('chat-provider-change', { detail: e.detail }))}"
             @send-chat="${(e) => this.dispatchEvent(new CustomEvent('send-chat', { detail: e.detail }))}">
           </ai-chat>
         </div>

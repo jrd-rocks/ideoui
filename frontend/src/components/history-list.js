@@ -6,7 +6,8 @@ import './prompt-inspector.js';
 export class HistoryList extends LitElement {
   static properties = {
     historyItems: { type: Array },
-    showBboxes: { type: Boolean }
+    showBboxes: { type: Boolean },
+    providerSchemas: { type: Object }
   };
 
   createRenderRoot() {
@@ -17,6 +18,7 @@ export class HistoryList extends LitElement {
     super();
     this.historyItems = [];
     this.showBboxes = false;
+    this.providerSchemas = {};
   }
 
   reuse(item) {
@@ -104,6 +106,46 @@ export class HistoryList extends LitElement {
     };
   }
 
+  upsampleBadgeText(item) {
+    const upsamplerId = item.params?.upsampler;
+    const template = item.params?.upsampleTemplate;
+
+    let upsamplerAbbr = '';
+    if (upsamplerId) {
+      const schema = this.providerSchemas?.[upsamplerId];
+      if (schema?.abbreviation) {
+        upsamplerAbbr = schema.abbreviation;
+      } else if (upsamplerId.includes('ideogram')) {
+        upsamplerAbbr = 'IG';
+      } else if (upsamplerId.includes('deepseek')) {
+        upsamplerAbbr = 'DS';
+      } else {
+        upsamplerAbbr = upsamplerId;
+      }
+    }
+
+    let templateAbbr = '';
+    if (template) {
+      if (template === 'v3 (minimal)') {
+        templateAbbr = 'v3';
+      } else if (template === 'v4 (full)') {
+        templateAbbr = 'v4';
+      } else {
+        templateAbbr = template;
+      }
+    }
+
+    if (upsamplerAbbr && templateAbbr && upsamplerId !== 'llm_ideogram_magic') {
+      return `Magic ${upsamplerAbbr} (${templateAbbr})`;
+    } else if (upsamplerAbbr) {
+      return `Magic ${upsamplerAbbr}`;
+    } else if (templateAbbr) {
+      return `Magic (${templateAbbr})`;
+    } else {
+      return 'Magic';
+    }
+  }
+
   getTreeRoots() {
     if (!this.historyItems || this.historyItems.length === 0) {
       return [];
@@ -121,9 +163,20 @@ export class HistoryList extends LitElement {
     // 2. Identify roots and link children
     const roots = [];
     for (const node of nodesMap.values()) {
-      const parentUuid = node.item.parentUuid;
-      if (parentUuid && nodesMap.has(parentUuid)) {
-        nodesMap.get(parentUuid).children.push(node);
+      // Find highest available ancestor in the current history items
+      let ancestorUuid = node.item.parentUuid;
+      let highestAncestor = null;
+
+      while (ancestorUuid && nodesMap.has(ancestorUuid)) {
+        highestAncestor = nodesMap.get(ancestorUuid);
+        // Normally we just attach to the immediate parent if it exists.
+        // Wait, if we attach to the immediate parent, a chain like A -> B -> C works correctly.
+        // Let's just use immediate parent if it exists in the map.
+        break;
+      }
+
+      if (highestAncestor) {
+        highestAncestor.children.push(node);
       } else {
         roots.push(node);
       }
@@ -184,7 +237,7 @@ export class HistoryList extends LitElement {
             <div class="history-card-time-group">
               <span class="history-card-time">${timeStr}</span>
               ${item.upsampledPrompt ? html`
-                <span class="history-badge magic">✨ Magic (${item.params.upsampleTemplate || 'v1'})</span>
+                <span class="history-badge magic">✨ ${this.upsampleBadgeText(item)}</span>
               ` : ''}
               ${item.parentUuid ? (() => {
                 const parentItem = this.historyItems.find(h => h.uuid === item.parentUuid);
@@ -217,28 +270,30 @@ export class HistoryList extends LitElement {
             ${(item.images || []).map((imgUrl, imgIdx) => {
               let parsed = null;
               if (this.showBboxes && item.upsampledPrompt) {
-                try {
-                  parsed = JSON.parse(item.upsampledPrompt);
-                } catch (e) {}
+                const trimmed = item.upsampledPrompt.trim();
+                if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+                  try {
+                    parsed = JSON.parse(item.upsampledPrompt);
+                  } catch (e) {}
+                }
               }
               const elements = parsed?.compositional_deconstruction?.elements || [];
               return html`
                 <div class="history-thumb-container" style="aspect-ratio: ${aspect}; cursor: pointer;" @click="${() => this.openLightbox(imgUrl, item.rawPrompt, item.params.seed, item, imgIdx)}">
                   <img src="${imgUrl}" alt="Thumbnail ${imgIdx + 1}" class="history-thumb ${this.showBboxes ? 'show-bboxes-active' : ''}" loading="lazy">
+                  <!-- Boxed elements -->
                   ${elements.map((element, idx) => {
-                    const bbox = element.bbox || [0, 0, 1000, 1000];
-                    const y1 = bbox[0];
-                    const x1 = bbox[1];
-                    const y2 = bbox[2];
-                    const x2 = bbox[3];
-                    const top = y1 / 10;
-                    const left = x1 / 10;
-                    const width = (x2 - x1) / 10;
-                    const height = (y2 - y1) / 10;
+                    if (!element.bbox) return '';
+                    const bbox = element.bbox;
+                    const top = bbox[0] / 10;
+                    const left = bbox[1] / 10;
+                    const width = (bbox[3] - bbox[1]) / 10;
+                    const height = (bbox[2] - bbox[0]) / 10;
+                    const styleStr = `top: ${top}%; left: ${left}%; width: ${width}%; height: ${height}%;`;
 
                     return html`
                       <div class="history-bbox-overlay" 
-                           style="top: ${top}%; left: ${left}%; width: ${width}%; height: ${height}%;" 
+                           style="${styleStr}"
                            @mouseenter="${this.onMouseMoveBbox}"
                            @mousemove="${this.onMouseMoveBbox}"
                            @click="${(e) => { e.stopPropagation(); this.openLightbox(imgUrl, item.rawPrompt, item.params.seed, item, imgIdx); }}">
@@ -247,11 +302,32 @@ export class HistoryList extends LitElement {
                           <div style="font-weight: 700; color: var(--accent-purple); text-transform: uppercase; font-size: 0.72rem; margin-bottom: 0.35rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.15rem;">Element #${idx + 1}</div>
                           <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Prompt:</span> "${element.text || element.desc || 'Object'}"</div>
                           <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Type:</span> ${element.type || 'obj'}</div>
-                          <div><span style="color: var(--text-secondary);">BBox:</span> [${bbox.join(', ')}]</div>
+                          <div><span style="color: var(--text-secondary);">BBox:</span> [${element.bbox.join(', ')}]</div>
                         </div>
                       </div>
                     `;
                   })}
+
+                  <!-- Unboxed elements wrapping container -->
+                  <div class="history-unboxed-container">
+                    ${elements.map((element, idx) => {
+                      if (element.bbox) return '';
+                      return html`
+                        <div class="history-bbox-overlay unboxed"
+                             @mouseenter="${this.onMouseMoveBbox}"
+                             @mousemove="${this.onMouseMoveBbox}"
+                             @click="${(e) => { e.stopPropagation(); this.openLightbox(imgUrl, item.rawPrompt, item.params.seed, item, imgIdx); }}">
+                          <span class="history-bbox-number">${idx + 1}</span>
+                          <div class="bbox-tooltip">
+                            <div style="font-weight: 700; color: var(--accent-purple); text-transform: uppercase; font-size: 0.72rem; margin-bottom: 0.35rem; border-bottom: 1px solid var(--card-border); padding-bottom: 0.15rem;">Element #${idx + 1}</div>
+                            <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Prompt:</span> "${element.text || element.desc || 'Object'}"</div>
+                            <div style="margin-bottom: 0.25rem;"><span style="color: var(--text-secondary);">Type:</span> ${element.type || 'obj'}</div>
+                            <div><span style="color: var(--text-secondary);">BBox:</span> None</div>
+                          </div>
+                        </div>
+                      `;
+                    })}
+                  </div>
                 </div>
               `;
             })}

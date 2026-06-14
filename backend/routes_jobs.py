@@ -8,12 +8,11 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from sqlalchemy import or_
 
 from backend.database import SessionLocal
-from backend.job_runner import cancel_job_task, get_llm_semaphore, schedule_job
+from backend.job_runner import cancel_job_task, get_hold_generation, get_llm_semaphore, schedule_job
 from backend.job_state import build_steps, job_to_dict, update_job_record
 from backend.json_helpers import strict_json_prompt
 from backend.models import ActiveJob
-from backend.providers import get_generation_providers, get_upsampler_providers
-from backend.providers.deepseek_provider import DeepSeekProvider
+from backend.providers import get_generation_providers, get_upsampler_providers, get_chat_providers
 from backend.schemas import JobCreate
 from backend.ws import finish_websocket_stream, push_job, websocket_stream_callback, ws_manager
 
@@ -48,7 +47,18 @@ async def create_job(payload: JobCreate):
 
     job_id = f"job_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
     job_uuid = str(uuid.uuid4())
-    status = "editing" if payload.job_type == "editing" else "pending"
+    # When advanced_mode + cached upsampled_prompt are both present, create
+    # as "editing" directly to avoid a race condition where the async task's
+    # quick WebSocket update gets overwritten by the HTTP response.
+    if payload.job_type == "editing":
+        status = "editing"
+    elif payload.advanced_mode and payload.upsampled_prompt:
+        status = "editing"
+    elif get_hold_generation():
+        # Hold active: immediately park as held so it never starts
+        status = "held"
+    else:
+        status = "pending"
     upsampler_params = dict(payload.upsampler_params or {})
     upsampler_params.update({
         "_magic_prompt": payload.magic_prompt,
@@ -56,6 +66,12 @@ async def create_job(payload: JobCreate):
         "_is_json_mode": payload.is_json_mode,
     })
     steps = build_steps(payload.magic_prompt or payload.is_json_mode, payload.advanced_mode, "editing" if status == "editing" else "queued")
+    chat_messages = payload.chat_messages or []
+    if status == "editing" and payload.upsampled_prompt and not chat_messages:
+        chat_messages = [
+            {"role": "system", "content": "Visual Prompt Layout Chat Assistant."},
+            {"role": "assistant", "content": payload.upsampled_prompt},
+        ]
     with SessionLocal() as db:
         job = ActiveJob(
             job_id=job_id,
@@ -66,13 +82,13 @@ async def create_job(payload: JobCreate):
             upsampler=payload.upsampler,
             job_type=payload.job_type,
             progress_step=status,
-            display_text="Layout draft ready" if status == "editing" else "Queued",
+            display_text="Layout draft ready" if status == "editing" else ("Held in queue" if status == "held" else "Queued"),
             raw_prompt=payload.raw_prompt,
             upsampled_prompt=payload.upsampled_prompt,
             provider_params=payload.provider_params or {},
             upsampler_params=upsampler_params,
             draft_json=payload.draft_json,
-            chat_messages=payload.chat_messages or [],
+            chat_messages=chat_messages,
             steps=steps,
         )
         db.add(job)
@@ -83,7 +99,7 @@ async def create_job(payload: JobCreate):
     await push_job("job_created", response_job)
     if status == "pending":
         schedule_job(job_id)
-    return {"job_id": job_id, "uuid": job_uuid, "job": response_job}
+    return {"job_id": job_id, "uuid": job_uuid, "job": response_job, "held": status == "held"}
 
 
 @router.get("/api/jobs/active")
@@ -175,7 +191,15 @@ async def chat_job(job_id: str, request: Request):
         db.commit()
 
     model_messages = editor_chat_messages(current_json, user_message or "")
-    provider = DeepSeekProvider("deepseek", {"name": "DeepSeek"})
+    chat_provider_id = body.get("chat_provider")
+    chat_providers = get_chat_providers()
+    if chat_provider_id and chat_provider_id in chat_providers:
+        provider = chat_providers[chat_provider_id]
+    elif chat_providers:
+        provider = next(iter(chat_providers.values()))
+    else:
+        raise HTTPException(status_code=400, detail="No chat-capable providers configured")
+
     stream_emit = websocket_stream_callback(job_id, "chat")
     async with get_llm_semaphore():
         result = await anyio.to_thread.run_sync(provider.query, model_messages, stream_emit)
