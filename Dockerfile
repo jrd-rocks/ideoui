@@ -5,7 +5,6 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 
-# Vite build writes to ../static by default in this repo
 COPY frontend/ ./
 RUN npm run build
 

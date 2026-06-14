@@ -12,14 +12,13 @@ def get_s3_client():
     if not r2["account_id"] or not r2["access_key_id"] or not r2["secret_access_key"] or not r2["bucket_name"]:
         raise ValueError("Cloudflare R2 configuration is missing credentials in ui/config/ui/config/config.toml.")
         
-    endpoint_url = r2.get("endpoint_url") or os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
     s3_client = boto3.client(
         service_name="s3",
-        endpoint_url=endpoint_url,
+        endpoint_url=r2.get("endpoint_url") or os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com",
         aws_access_key_id=r2["access_key_id"],
         aws_secret_access_key=r2["secret_access_key"],
         region_name="auto",
-        config=Config(signature_version="s3v4")
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"})
     )
     return s3_client, r2["bucket_name"], r2["public_url"]
 
@@ -48,9 +47,8 @@ def upload_image(image_bytes: bytes, filename: str) -> str:
         
         if not public_url:
             r2 = get_r2_config()
-            # Garage/Minio specific URL fallback if public_url isn't set, not perfectly reliable but a fallback.
-            endpoint_url = r2.get("endpoint_url") or os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
             # Return endpoint URL fallback
+            endpoint_url = r2.get("endpoint_url") or os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
             return f"{endpoint_url}/{bucket}/{filename}"
             
         base_url = public_url.rstrip("/")
