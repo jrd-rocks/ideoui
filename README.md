@@ -57,6 +57,7 @@ Here is how the project is structured:
 ### Prerequisites
 
 You will need:
+*   **Docker** (recommended) OR
 *   **Python** (version 3.11 or newer)
 *   **Node.js** (LTS version)
 *   **uv** (recommended for managing Python packages) and **npm**
@@ -91,6 +92,10 @@ npm install
 ---
 
 ## Running the App Locally
+
+### Docker Setup
+
+For instructions on deploying with Docker (including local S3/R2 mock and SQLite), see [docker.md](docker.md).
 
 ### Development Mode (Frontend & Backend)
 
