@@ -16,11 +16,11 @@ proxy_auth_secret = ""
 max_simultaneous = 2
 
 [database]
-url = "postgresql+psycopg://user:password@localhost:5432/ideoui"
+url = "sqlite:///app/db/ideoui.db"
 
 [r2]
-account_id = ""
-access_key_id = ""
-secret_access_key = ""
-bucket_name = ""
-public_url = ""
+account_id = "garage-local"
+access_key_id = "INSERT_YOUR_GARAGE_ACCESS_KEY"
+secret_access_key = "INSERT_YOUR_GARAGE_SECRET_KEY"
+bucket_name = "ideoui"
+public_url = "http://localhost:3902/ideoui"

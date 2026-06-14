@@ -48,6 +48,7 @@ def upload_image(image_bytes: bytes, filename: str) -> str:
         
         if not public_url:
             r2 = get_r2_config()
+            # Garage/Minio specific URL fallback if public_url isn't set, not perfectly reliable but a fallback.
             endpoint_url = os.environ.get("S3_ENDPOINT_URL") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
             # Return endpoint URL fallback
             return f"{endpoint_url}/{bucket}/{filename}"

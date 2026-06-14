@@ -7,34 +7,49 @@ services:
       - "8000:8000"
     volumes:
       - ./config:/app/config
+      - ./db:/app/db
     environment:
-      - DATABASE_URL=sqlite:///config/ideoui.db
-      - S3_ENDPOINT_URL=http://minio:9000
+      - DATABASE_URL=sqlite:///app/db/ideoui.db
+      - S3_ENDPOINT_URL=http://garage:3900
     depends_on:
-      - minio
+      garage-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
-  minio:
-    image: minio/minio
-    command: server /data --console-address ":9001"
+  garage:
+    image: dxflrs/garage:v0.9.1
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "3900:3900"
+      - "3902:3902"
+      - "3903:3903"
     environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
+      - GARAGE_CONFIG_FILE=/etc/garage.toml
     volumes:
-      - ./r2_data:/data
+      - ./garage.toml:/etc/garage.toml
+      - ./r2_data:/var/lib/garage
     restart: unless-stopped
 
-  create-bucket:
-    image: minio/mc
+  garage-init:
+    image: dxflrs/garage:v0.9.1
     depends_on:
-      - minio
+      - garage
+    environment:
+      - GARAGE_CONFIG_FILE=/etc/garage.toml
+    volumes:
+      - ./garage.toml:/etc/garage.toml
     entrypoint: >
       /bin/sh -c "
       sleep 5;
-      /usr/bin/mc config host add myminio http://minio:9000 minioadmin minioadmin;
-      /usr/bin/mc mb myminio/ideoui --ignore-existing;
-      /usr/bin/mc anonymous set download myminio/ideoui;
+      if ! /garage bucket info ideoui >/dev/null 2>&1; then
+        /garage layout assign -z dc1 -c 1g \`garage status | awk '/^[0-9a-f]/{print $$1}'\`;
+        /garage layout apply --version 1;
+        /garage key new --name ideoui-key;
+        /garage bucket create ideoui;
+        /garage bucket allow ideoui --read --write --owner --key ideoui-key;
+        /garage bucket website --allow ideoui;
+        echo '=== GARAGE INITIALIZED ==='
+        echo 'Run "docker-compose logs garage-init" to see your access keys, then update config.toml'
+      else
+        echo 'Garage already initialized.'
+      fi
       "
