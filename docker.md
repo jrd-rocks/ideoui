@@ -9,25 +9,19 @@ IdeoUI can be deployed easily using Docker and Docker Compose. This deployment u
    ```bash
    cp config/config.example.toml config/config.toml
    ```
-   Update `config/config.toml` with your DeepSeek/Modal API keys. For `database` and `r2`, you can use the values below to match the Docker Compose setup:
+   Update `config/config.toml` with your DeepSeek/Modal API keys. For `database` and `r2`, you can use the values below to match the default credentials provided in `docker-compose.yml`:
 
    ```toml
    [database]
-   url = "sqlite:///app/db/ideoui.db"
+   url = "sqlite:////app/db/ideoui.db"
 
    [r2]
    account_id = "garage-local"  # This is ignored by the endpoint override
-   access_key_id = "INSERT_YOUR_GARAGE_ACCESS_KEY"
-   secret_access_key = "INSERT_YOUR_GARAGE_SECRET_KEY"
+   access_key_id = "GKgarageaccesskeyid1234"
+   secret_access_key = "garage_secret_key_12345678901234567890"
    bucket_name = "ideoui"
    public_url = "http://localhost:3902/ideoui"
    ```
-   *Note: To get your `access_key_id` and `secret_access_key` for Garage, view the logs of the `garage-init` container after it finishes initializing:*
-   ```bash
-   docker-compose logs garage-init
-   ```
-   *Copy the generated `Key ID` and `Secret key` into your `config.toml` and then restart the `ideoui` service.*
-
    *Note: In the Docker environment, the R2 endpoint URL is overridden via environment variables in `docker-compose.yml` to point to the local Garage instance.*
 
 2. **Run with Docker Compose:**
@@ -48,7 +42,6 @@ IdeoUI can be deployed easily using Docker and Docker Compose. This deployment u
 
 - **ideoui**: The main application running FastAPI (and serving the pre-built Vite frontend).
 - **garage**: Local S3-compatible object storage that mimics R2 for the application.
-- **garage-init**: A setup container that provisions the Garage bucket and access keys.
 
 ## Accessing the App
 

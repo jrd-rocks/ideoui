@@ -9,47 +9,25 @@ services:
       - ./config:/app/config
       - ./db:/app/db
     environment:
-      - DATABASE_URL=sqlite:///app/db/ideoui.db
+      - DATABASE_URL=sqlite:////app/db/ideoui.db
       - S3_ENDPOINT_URL=http://garage:3900
     depends_on:
-      garage-init:
-        condition: service_completed_successfully
+      - garage
     restart: unless-stopped
 
   garage:
-    image: dxflrs/garage:v0.9.1
+    image: dxflrs/garage:v2.3.0
+    command: server --single-node --default-bucket
     ports:
       - "3900:3900"
       - "3902:3902"
       - "3903:3903"
     environment:
       - GARAGE_CONFIG_FILE=/etc/garage.toml
+      - GARAGE_DEFAULT_ACCESS_KEY=GKgarageaccesskeyid1234
+      - GARAGE_DEFAULT_SECRET_KEY=garage_secret_key_12345678901234567890
+      - GARAGE_DEFAULT_BUCKET=ideoui
     volumes:
       - ./garage.toml:/etc/garage.toml
       - ./r2_data:/var/lib/garage
     restart: unless-stopped
-
-  garage-init:
-    image: dxflrs/garage:v0.9.1
-    depends_on:
-      - garage
-    environment:
-      - GARAGE_CONFIG_FILE=/etc/garage.toml
-    volumes:
-      - ./garage.toml:/etc/garage.toml
-    entrypoint: >
-      /bin/sh -c "
-      sleep 5;
-      if ! /garage bucket info ideoui >/dev/null 2>&1; then
-        /garage layout assign -z dc1 -c 1g \`garage status | awk '/^[0-9a-f]/{print $$1}'\`;
-        /garage layout apply --version 1;
-        /garage key new --name ideoui-key;
-        /garage bucket create ideoui;
-        /garage bucket allow ideoui --read --write --owner --key ideoui-key;
-        /garage bucket website --allow ideoui;
-        echo '=== GARAGE INITIALIZED ==='
-        echo 'Run "docker-compose logs garage-init" to see your access keys, then update config.toml'
-      else
-        echo 'Garage already initialized.'
-      fi
-      "
