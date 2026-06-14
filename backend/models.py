@@ -54,3 +54,10 @@ class SessionState(Base):
     form_state = Column(JSON, nullable=False, default=dict)
     draft_json = Column(JSON, nullable=True)
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(Text, primary_key=True, index=True, nullable=False)
+    value = Column(Text, nullable=True)

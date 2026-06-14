@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Dancing+Script:wght@500;600&display=swap');
+
 /* ==========================================================================
    Fluent-Inspired Design System & Theme Tokens
    ========================================================================== */
@@ -1504,20 +1506,16 @@ job-queue {
     flex-direction: column;
 }
 
-.queue-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
 .clear-queue-btn {
-    background: var(--overlay-bg-hover);
-    border: 1px solid var(--overlay-border-hover);
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
     color: var(--text-secondary);
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.7rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
     font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
 }
 
 .clear-queue-btn:hover {
@@ -1543,6 +1541,87 @@ job-queue {
     overflow-y: auto;
     min-height: 0;
     max-height: unset;
+}
+
+.queue-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--card-border);
+    margin-top: auto;
+    flex-shrink: 0;
+}
+
+.queue-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-grow: 1;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-style: italic;
+    padding: 3rem 1rem;
+    text-align: center;
+}
+
+/* Toggle Switch Styles */
+.switch-container {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    user-select: none;
+}
+
+.switch-container input[type="checkbox"] {
+    display: none;
+}
+
+.switch-slider {
+    position: relative;
+    display: inline-block;
+    width: 36px;
+    height: 20px;
+    background-color: var(--badge-bg);
+    border: 1px solid var(--control-border);
+    border-radius: 20px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.switch-slider::before {
+    position: absolute;
+    content: "";
+    height: 14px;
+    width: 14px;
+    left: 2px;
+    bottom: 2px;
+    background-color: var(--text-muted);
+    border-radius: 50%;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.switch-container:hover .switch-slider {
+    border-color: var(--control-border-hover);
+}
+
+.switch-container:hover .switch-slider::before {
+    background-color: var(--text-secondary);
+}
+
+.switch-container input[type="checkbox"]:checked + .switch-slider {
+    background: var(--gradient-btn);
+    border-color: transparent;
+}
+
+.switch-container input[type="checkbox"]:checked + .switch-slider::before {
+    transform: translateX(16px);
+    background-color: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 
 .queue-item {
@@ -2013,6 +2092,220 @@ job-queue {
     border-radius: 50%;
     box-shadow: 0 0 20px var(--accent-purple-glow);
     animation: pulse 1.8s ease-in-out infinite;
+}
+
+.idle-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-grow: 1;
+    width: 100%;
+    height: 100%;
+    min-height: 350px;
+    padding: 2rem;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+.idle-cursive-text {
+    font-family: 'Dancing Script', 'Caveat', cursive, Georgia, serif;
+    font-size: 2.2rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    opacity: 0.85;
+    letter-spacing: 0.02em;
+    user-select: none;
+    line-height: 1.4;
+    animation: fadeInIdle 0.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes fadeInIdle {
+    from {
+        opacity: 0;
+        transform: translateY(6px);
+    }
+    to {
+        opacity: 0.85;
+        transform: translateY(0);
+    }
+}
+
+/* Held Job Detail View */
+.held-job-detail {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    height: 100%;
+    min-height: 0;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    box-sizing: border-box;
+    overflow-y: auto;
+    animation: fadeInIdle 0.5s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.held-job-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--card-border);
+    flex-shrink: 0;
+}
+
+.held-job-header h2 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.held-job-body {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    flex-shrink: 0;
+}
+
+.held-prompt-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.held-prompt-section.expandable {
+    flex-shrink: 0;
+}
+
+.held-prompt-section h4 {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.held-prompt-text {
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.held-prompt-content {
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    border-radius: 8px;
+    padding: 1.25rem;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-y: auto;
+    max-height: 300px;
+    margin: 0;
+    box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.held-prompt-content.json-format {
+    color: var(--accent-blue);
+}
+
+.held-meta-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.held-meta-section h4 {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin: 0;
+}
+
+.held-params-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem;
+    background: var(--overlay-bg);
+    border: 1px solid var(--overlay-border);
+    border-radius: 8px;
+    padding: 0.85rem 1rem;
+}
+
+.param-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.param-name {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.param-value {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
+.held-actions-section {
+    display: flex;
+    justify-content: flex-start;
+    padding-top: 1rem;
+    border-top: 1px solid var(--card-border);
+    flex-shrink: 0;
+}
+
+/* Reusable Action Button */
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border-radius: 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    padding: 0.55rem 1.25rem;
+    border: 1px solid var(--control-border);
+}
+
+.action-btn.primary-action {
+    background: var(--gradient-btn);
+    color: #ffffff;
+    border: none;
+    box-shadow: 0 4px 12px rgba(109, 40, 217, 0.2);
+}
+
+.action-btn.primary-action:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(109, 40, 217, 0.35);
+}
+
+.action-btn.primary-action:active {
+    transform: translateY(0);
+}
+
+.action-btn .btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .loading-state {
@@ -2606,6 +2899,16 @@ layout-editor, ai-chat {
     flex-grow: 1;
     min-height: 0;
     width: 100%;
+}
+
+control-panel,
+display-panel {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    width: 100%;
+    overflow: hidden;
 }
 
 .control-panel {

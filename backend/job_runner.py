@@ -1,4 +1,6 @@
 import asyncio
+import os
+import json
 from typing import Optional
 
 import anyio
@@ -6,7 +8,7 @@ import anyio
 
 from backend.database import SessionLocal
 from backend.job_state import build_steps, save_completed_history, update_job_record
-from backend.models import ActiveJob
+from backend.models import ActiveJob, SystemSetting
 from backend.providers import get_generation_providers, get_upsampler_providers
 from backend.storage import upload_previews_zip
 from backend.utils import clean_and_reorder_prompt_json
@@ -16,17 +18,31 @@ from backend.ws import finish_websocket_stream, push_generation_progress, push_j
 llm_semaphore: Optional[asyncio.Semaphore] = None
 provider_semaphores: dict[str, asyncio.Semaphore] = {}
 job_tasks: dict[str, asyncio.Task] = {}
-_hold_generation: bool = False
-
 def get_hold_generation() -> bool:
-    global _hold_generation
-    return _hold_generation
+    try:
+        with SessionLocal() as db:
+            setting = db.query(SystemSetting).filter(SystemSetting.key == "hold_generation").first()
+            if setting:
+                return setting.value == "true"
+    except Exception as e:
+        print(f"[Jobs] Error reading settings from DB: {e}", flush=True)
+    return False
 
 def set_hold_generation(val: bool):
-    global _hold_generation
-    _hold_generation = val
-    print(f"[Jobs] hold_generation set to {_hold_generation}", flush=True)
-    if not _hold_generation:
+    try:
+        with SessionLocal() as db:
+            setting = db.query(SystemSetting).filter(SystemSetting.key == "hold_generation").first()
+            val_str = "true" if val else "false"
+            if setting:
+                setting.value = val_str
+            else:
+                setting = SystemSetting(key="hold_generation", value=val_str)
+                db.add(setting)
+            db.commit()
+    except Exception as e:
+        print(f"[Jobs] Error writing settings to DB: {e}", flush=True)
+    print(f"[Jobs] hold_generation set to {val}", flush=True)
+    if not val:
         resume_held_jobs()
 
 def resume_held_jobs():

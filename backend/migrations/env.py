@@ -11,6 +11,7 @@ from alembic import context
 
 from backend.config import get_database_url
 from backend.database import Base
+import backend.models
 
 config = context.config
 

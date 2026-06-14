@@ -136,28 +136,30 @@ export class JobQueue extends LitElement {
   }
 
   render() {
-    if (!this.jobQueue || this.jobQueue.length === 0) {
-      return html``;
-    }
-
-    const activeCount = this.jobQueue.filter(j => j.status !== 'completed' && j.status !== 'failed').length;
-    const heldCount = this.jobQueue.filter(j => j.status === 'held').length;
+    const queueItems = this.jobQueue || [];
+    const heldCount = queueItems.filter(j => j.status === 'held').length;
     const treeRoots = this.getTreeRoots();
 
     return html`
       <div id="queuePanel" class="queue-panel">
-        <div class="queue-header">
-          <h4>Active Queue (<span id="queueActiveCount">${activeCount}</span>)</h4>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <label class="hold-generation-toggle" style="display: flex; align-items: center; gap: 5px; font-size: 0.8rem; cursor: pointer;">
-              <input type="checkbox" .checked="${this.holdGeneration}" @change="${this.toggleHoldGeneration}" />
-              Hold Generation ${heldCount > 0 ? `(${heldCount})` : ''}
-            </label>
-            <button id="clearQueueBtn" class="clear-queue-btn" @click="${this.clearCompleted}">Clear Completed</button>
-          </div>
-        </div>
         <div class="queue-list" id="queueList">
-          ${treeRoots.map(rootNode => this.renderJob(rootNode, 0))}
+          ${treeRoots.length > 0
+            ? treeRoots.map(rootNode => this.renderJob(rootNode, 0))
+            : html`
+              <div class="queue-empty">
+                <p>No active generations</p>
+              </div>
+            `}
+        </div>
+        <div class="queue-footer">
+          <label class="switch-container">
+            <span class="switch-label">Hold Generation ${heldCount > 0 ? `(${heldCount})` : ''}</span>
+            <input type="checkbox" .checked="${this.holdGeneration}" @change="${this.toggleHoldGeneration}" />
+            <span class="switch-slider"></span>
+          </label>
+          <button id="clearQueueBtn" class="clear-queue-btn" @click="${this.clearCompleted}">
+            Clear Completed
+          </button>
         </div>
       </div>
     `;

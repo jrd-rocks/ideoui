@@ -781,6 +781,18 @@ export class AppRoot extends LitElement {
     await this.loadHistory();
   }
 
+  async onEditHeldJob(e) {
+    const jobId = e.detail;
+    try {
+      queueStore.updateJob(jobId, { status: 'editing' });
+      await this.patchServerJob(jobId, { status: 'editing' });
+      this.activeLeftTab = 'generator';
+      window.location.hash = '#/editor/' + jobId;
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  }
+
   onOpenLightbox(e) {
     const { src, prompt, seed, item } = e.detail;
     this.lightboxSrc = src;
@@ -982,6 +994,7 @@ export class AppRoot extends LitElement {
             .providerSchemas="${this.providerSchemas}"
             @switch-tab="${this.onSwitchTab}"
             @cancel-active-job="${() => this.removeJob(this.selectedJobId)}"
+            @edit-held-job="${this.onEditHeldJob}"
             @select-job="${this.onSelectJob}"
             @cancel-job="${this.onCancelJob}"
             @clear-completed-jobs="${this.onClearCompletedJobs}"
