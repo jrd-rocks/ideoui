@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from sqlalchemy import or_
 
 from backend.database import SessionLocal
-from backend.job_runner import cancel_job_task, get_llm_semaphore, schedule_job
+from backend.job_runner import cancel_job_task, get_hold_generation, get_llm_semaphore, schedule_job
 from backend.job_state import build_steps, job_to_dict, update_job_record
 from backend.json_helpers import strict_json_prompt
 from backend.models import ActiveJob
@@ -54,6 +54,9 @@ async def create_job(payload: JobCreate):
         status = "editing"
     elif payload.advanced_mode and payload.upsampled_prompt:
         status = "editing"
+    elif get_hold_generation():
+        # Hold active: immediately park as held so it never starts
+        status = "held"
     else:
         status = "pending"
     upsampler_params = dict(payload.upsampler_params or {})
@@ -79,7 +82,7 @@ async def create_job(payload: JobCreate):
             upsampler=payload.upsampler,
             job_type=payload.job_type,
             progress_step=status,
-            display_text="Layout draft ready" if status == "editing" else "Queued",
+            display_text="Layout draft ready" if status == "editing" else ("Held in queue" if status == "held" else "Queued"),
             raw_prompt=payload.raw_prompt,
             upsampled_prompt=payload.upsampled_prompt,
             provider_params=payload.provider_params or {},
@@ -96,7 +99,7 @@ async def create_job(payload: JobCreate):
     await push_job("job_created", response_job)
     if status == "pending":
         schedule_job(job_id)
-    return {"job_id": job_id, "uuid": job_uuid, "job": response_job}
+    return {"job_id": job_id, "uuid": job_uuid, "job": response_job, "held": status == "held"}
 
 
 @router.get("/api/jobs/active")

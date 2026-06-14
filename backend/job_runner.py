@@ -286,7 +286,7 @@ async def execute_server_job(job_id: str):
             except Exception as exc:
                 print(f"[Jobs] Failed to upload previews zip: {exc}", flush=True)
 
-        save_completed_history(job_id, images, previews_url=previews_url)
+        await save_completed_history(job_id, images, previews_url=previews_url)
 
         print(f"[Jobs] About to update job with previews_url={previews_url}", flush=True)
         state = update_job_record(

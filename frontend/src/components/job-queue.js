@@ -17,6 +17,8 @@ export class JobQueue extends LitElement {
     this.jobQueue = [];
     this.selectedJobId = '';
     this.holdGeneration = false;
+    // Track which editing-parent nodes are expanded (collapsed by default)
+    this._expandedEditors = new Set();
   }
 
   connectedCallback() {
@@ -63,6 +65,16 @@ export class JobQueue extends LitElement {
     this.dispatchEvent(new CustomEvent('clear-completed-jobs'));
   }
 
+  toggleEditorExpand(jobId, e) {
+    e.stopPropagation();
+    if (this._expandedEditors.has(jobId)) {
+      this._expandedEditors.delete(jobId);
+    } else {
+      this._expandedEditors.add(jobId);
+    }
+    this.requestUpdate();
+  }
+
   getTreeRoots() {
     if (!this.jobQueue || this.jobQueue.length === 0) return [];
 
@@ -88,8 +100,68 @@ export class JobQueue extends LitElement {
     return roots;
   }
 
+  /** Summarise what the children are doing, e.g. "1 generating, 2 held" */
+  summariseChildren(children) {
+    const counts = {};
+    for (const child of children) {
+      const s = child.job.status;
+      counts[s] = (counts[s] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([s, n]) => `${n} ${s}`)
+      .join(', ');
+  }
+
+  renderEditingParent(node) {
+    const job = node.job;
+    const isSelected = this.selectedJobId === job.id;
+    const isExpanded = this._expandedEditors.has(job.id);
+    const childCount = node.children.length;
+    const childSummary = this.summariseChildren(node.children);
+
+    return html`
+      <div class="queue-item-wrapper">
+        <div class="queue-item editing-parent ${isSelected ? 'selected' : ''}" @click="${() => this.selectJob(job)}">
+          <div class="editing-parent-icon" title="Edit session">
+            ${icon('edit', 13)}
+          </div>
+          <div class="q-item-info">
+            <div class="q-item-prompt editing-parent-prompt">${job.rawPrompt}</div>
+            <div class="q-item-meta">
+              <span class="q-badge editing">Editing</span>
+              ${childCount > 0 ? html`<span class="editing-child-summary">${childSummary}</span>` : ''}
+            </div>
+          </div>
+          <div class="q-item-actions">
+            ${childCount > 0 ? html`
+              <button
+                class="q-expand-btn ${isExpanded ? 'expanded' : ''}"
+                title="${isExpanded ? 'Hide children' : 'Show children'}"
+                @click="${(e) => this.toggleEditorExpand(job.id, e)}"
+              >
+                <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="2,4 6,8 10,4"/>
+                </svg>
+              </button>
+            ` : ''}
+            <button class="q-cancel-btn" title="Remove Job" @click="${(e) => this.cancelJob(job.id, e)}">
+              ${icon('close', 12)}
+            </button>
+          </div>
+        </div>
+        ${isExpanded ? node.children.map(child => this.renderJob(child, 1)) : ''}
+      </div>
+    `;
+  }
+
   renderJob(node, depth = 0) {
     const job = node.job;
+
+    // Editing parents with children get a compact collapsed treatment
+    if (job.status === 'editing' && node.children.length > 0) {
+      return this.renderEditingParent(node);
+    }
+
     const isSelected = this.selectedJobId === job.id;
     let statusBadge = '';
 

@@ -85,3 +85,27 @@ def upload_previews_zip(preview_b64_list: List[str], filename: str) -> str:
     except Exception as e:
         print(f"[Storage] Failed to upload previews zip to R2: {e}")
         raise RuntimeError(f"R2 upload failed: {e}") from e
+
+
+def upload_json(data: dict, filename: str) -> str:
+    """Uploads json data dict to Cloudflare R2 and returns its public access URL."""
+    import json
+    try:
+        s3, bucket, public_url = get_s3_client()
+        json_str = json.dumps(data, indent=2)
+        s3.put_object(
+            Bucket=bucket,
+            Key=filename,
+            Body=json_str.encode("utf-8"),
+            ContentType="application/json"
+        )
+
+        if not public_url:
+            r2 = get_r2_config()
+            return f"https://{r2['account_id']}.r2.cloudflarestorage.com/{bucket}/{filename}"
+
+        base_url = public_url.rstrip("/")
+        return f"{base_url}/{filename}"
+    except Exception as e:
+        print(f"[Storage] Failed to upload JSON to Cloudflare R2: {e}")
+        raise RuntimeError(f"R2 upload failed: {e}") from e

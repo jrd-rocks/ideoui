@@ -100,7 +100,10 @@ def build_steps(magic_prompt: bool, advanced_mode: bool, active: str = "queued")
     return steps
 
 
-def save_completed_history(job_id: str, images: list[str], previews_url: str = None):
+async def save_completed_history(job_id: str, images: list[str], previews_url: str = None):
+    import anyio
+    from backend.storage import upload_json
+
     with SessionLocal() as db:
         job = db.query(ActiveJob).filter(ActiveJob.job_id == job_id).first()
         if not job:
@@ -115,8 +118,32 @@ def save_completed_history(job_id: str, images: list[str], previews_url: str = N
             if p_url and not history.previews_url:
                 history.previews_url = p_url
                 db.commit()
+            # Ensure metadata JSON is uploaded if missing
+            metadata = {
+                "uuid": job.uuid,
+                "parent_uuid": job.parent_uuid,
+                "timestamp": history.timestamp,
+                "raw_prompt": job.raw_prompt,
+                "upsampled_prompt": job.upsampled_prompt,
+                "images": history.images,
+                "previews_url": history.previews_url,
+                "params": history.params
+            }
+            try:
+                filename = f"metadata/{history.timestamp}_{job.uuid}.json"
+                await anyio.to_thread.run_sync(upload_json, metadata, filename)
+                print(f"[History Save] Uploaded missing metadata JSON for existing job {job.uuid} to R2", flush=True)
+            except Exception as e:
+                print(f"[History Save] Failed to upload metadata JSON to R2: {e}", flush=True)
             return
 
+        history_params = {
+            "provider": job.provider,
+            "upsampler": job.upsampler,
+            "providerParams": job.provider_params or {},
+            "upsamplerParams": public_upsampler_params(job),
+            **job_params_for_client(job),
+        }
         history = GenerationHistory(
             timestamp=int(time.time() * 1000),
             uuid=job.uuid,
@@ -125,17 +152,31 @@ def save_completed_history(job_id: str, images: list[str], previews_url: str = N
             upsampled_prompt=job.upsampled_prompt,
             images=images,
             previews_url=previews_url or job.previews_url,
-            params={
-                "provider": job.provider,
-                "upsampler": job.upsampler,
-                "providerParams": job.provider_params or {},
-                "upsamplerParams": public_upsampler_params(job),
-                **job_params_for_client(job),
-            },
+            params=history_params,
         )
         db.add(history)
         db.commit()
+        db.refresh(history)
         print(
             f"[History Save] Saved completed job job_id={job.job_id} uuid={job.uuid} parent_uuid={job.parent_uuid} images={len(images)}",
             flush=True,
         )
+
+        # Build metadata payload
+        metadata = {
+            "uuid": job.uuid,
+            "parent_uuid": job.parent_uuid,
+            "timestamp": history.timestamp,
+            "raw_prompt": job.raw_prompt,
+            "upsampled_prompt": job.upsampled_prompt,
+            "images": images,
+            "previews_url": previews_url or job.previews_url,
+            "params": history_params,
+        }
+
+        try:
+            filename = f"metadata/{history.timestamp}_{job.uuid}.json"
+            await anyio.to_thread.run_sync(upload_json, metadata, filename)
+            print(f"[History Save] Successfully uploaded generation metadata JSON for {job.uuid} to R2", flush=True)
+        except Exception as e:
+            print(f"[History Save] Failed to upload metadata JSON to R2: {e}", flush=True)

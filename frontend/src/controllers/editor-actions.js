@@ -133,7 +133,12 @@ export async function editorGenerate(ctx) {
     upsampled_prompt: upsampledPrompt,
     chat_messages: editorJob.chatMessages || []
   });
-  ctx.showToast(`Queued generation for "${editorJob.rawPrompt.substring(0, 30)}..."`, 'success');
+  const isHeld = result.held === true;
+  if (isHeld) {
+    ctx.showToast(`Generation held — will start when "Hold Generation" is released.`, 'info');
+  } else {
+    ctx.showToast(`Queued generation for "${editorJob.rawPrompt.substring(0, 30)}..."`, 'success');
+  }
   ctx.activeLeftTab = 'progress';
   window.location.hash = '#/job/' + result.job_id;
 }
