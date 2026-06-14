@@ -217,7 +217,12 @@ class QueueStore {
       this.updateJob(jobId, { chatMessages: messages, llmStream: next });
       return;
     }
-    this.updateJob(jobId, { llmStream: next });
+    // If progress-context LLM stream tokens arrive, the job is definitely upsampling.
+    // Force status to reflect this in case the job_update WS message was missed.
+    const statusUpdate = (job && next.context !== 'chat' && job.status === 'pending')
+      ? { status: 'upsampling' }
+      : {};
+    this.updateJob(jobId, { llmStream: next, ...statusUpdate });
   }
 
   applyGenerationProgress(payload) {
@@ -227,14 +232,21 @@ class QueueStore {
     if (payload.progress_event === 'step') {
       updates.genStep = payload.step;
       updates.genTotal = payload.total;
-        if (payload.previews) {
-          const all = Object.values(payload.previews).flat();
-          if (all.length) {
-            updates.genPreviews = all.map(p => `data:image/jpeg;base64,${p}`);
-          }
+      if (payload.previews) {
+        const all = Object.values(payload.previews).flat();
+        if (all.length) {
+          updates.genPreviews = all.map(p => `data:image/jpeg;base64,${p}`);
         }
+      }
     } else if (payload.progress_event === 'status') {
       updates.genStatus = payload.text;
+    }
+    // If we receive generation progress the job is definitely rendering —
+    // force status to "generating" even if the job_update WS message was missed
+    // (e.g. due to a race condition or reconnect).
+    const job = this.jobQueue.find(item => item.id === jobId);
+    if (job && job.status !== 'generating') {
+      updates.status = 'generating';
     }
     if (Object.keys(updates).length) {
       this.updateJob(jobId, updates);
