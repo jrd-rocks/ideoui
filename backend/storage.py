@@ -9,16 +9,18 @@ from backend.config import get_r2_config
 def get_s3_client():
     r2 = get_r2_config()
     
-    if not r2["account_id"] or not r2["access_key_id"] or not r2["secret_access_key"] or not r2["bucket_name"]:
-        raise ValueError("Cloudflare R2 configuration is missing credentials in ui/config/ui/config/config.toml.")
+    if (not r2["account_id"] and not r2["endpoint_url"]) or not r2["access_key_id"] or not r2["secret_access_key"] or not r2["bucket_name"]:
+        raise ValueError("Cloudflare R2 configuration is missing credentials in config/config.toml.")
         
+    endpoint_url = r2.get("endpoint_url") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
+
     s3_client = boto3.client(
         service_name="s3",
-        endpoint_url=f"https://{r2['account_id']}.r2.cloudflarestorage.com",
+        endpoint_url=endpoint_url,
         aws_access_key_id=r2["access_key_id"],
         aws_secret_access_key=r2["secret_access_key"],
         region_name="auto",
-        config=Config(signature_version="s3v4")
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"})
     )
     return s3_client, r2["bucket_name"], r2["public_url"]
 
@@ -48,7 +50,8 @@ def upload_image(image_bytes: bytes, filename: str) -> str:
         if not public_url:
             r2 = get_r2_config()
             # Return endpoint URL fallback
-            return f"https://{r2['account_id']}.r2.cloudflarestorage.com/{bucket}/{filename}"
+            endpoint_url = r2.get("endpoint_url") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
+            return f"{endpoint_url}/{bucket}/{filename}"
             
         base_url = public_url.rstrip("/")
         return f"{base_url}/{filename}"
@@ -78,7 +81,8 @@ def upload_previews_zip(preview_b64_list: List[str], filename: str) -> str:
 
         if not public_url:
             r2 = get_r2_config()
-            return f"https://{r2['account_id']}.r2.cloudflarestorage.com/{bucket}/{filename}"
+            endpoint_url = r2.get("endpoint_url") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
+            return f"{endpoint_url}/{bucket}/{filename}"
 
         base_url = public_url.rstrip("/")
         return f"{base_url}/{filename}"
@@ -102,7 +106,8 @@ def upload_json(data: dict, filename: str) -> str:
 
         if not public_url:
             r2 = get_r2_config()
-            return f"https://{r2['account_id']}.r2.cloudflarestorage.com/{bucket}/{filename}"
+            endpoint_url = r2.get("endpoint_url") or f"https://{r2['account_id']}.r2.cloudflarestorage.com"
+            return f"{endpoint_url}/{bucket}/{filename}"
 
         base_url = public_url.rstrip("/")
         return f"{base_url}/{filename}"

@@ -100,6 +100,10 @@ npm install
 
 ## Running the App Locally
 
+### Docker Deployment
+
+For instructions on deploying the application and a local S3 storage mock using Docker and Docker Compose, please read [docker.md](docker.md).
+
 ### Development Mode (Frontend & Backend)
 
 To run both the Vite development server (port 5173) and the FastAPI backend (port 8000) concurrently with hot-reloading:
