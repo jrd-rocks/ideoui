@@ -163,9 +163,20 @@ export class HistoryList extends LitElement {
     // 2. Identify roots and link children
     const roots = [];
     for (const node of nodesMap.values()) {
-      const parentUuid = node.item.parentUuid;
-      if (parentUuid && nodesMap.has(parentUuid)) {
-        nodesMap.get(parentUuid).children.push(node);
+      // Find highest available ancestor in the current history items
+      let ancestorUuid = node.item.parentUuid;
+      let highestAncestor = null;
+
+      while (ancestorUuid && nodesMap.has(ancestorUuid)) {
+        highestAncestor = nodesMap.get(ancestorUuid);
+        // Normally we just attach to the immediate parent if it exists.
+        // Wait, if we attach to the immediate parent, a chain like A -> B -> C works correctly.
+        // Let's just use immediate parent if it exists in the map.
+        break;
+      }
+
+      if (highestAncestor) {
+        highestAncestor.children.push(node);
       } else {
         roots.push(node);
       }

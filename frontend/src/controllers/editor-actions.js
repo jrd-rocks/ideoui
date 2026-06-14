@@ -125,7 +125,7 @@ export async function editorGenerate(ctx) {
     raw_prompt: editorJob.rawPrompt,
     provider: editorJob.provider || editorJob.params.endpoint || ctx.selectedEndpoint,
     upsampler: editorJob.upsampler || 'deepseek',
-    parent_uuid: editorJob.parentUuid || editorJob.uuid || null,
+    parent_uuid: editorJob.uuid || editorJob.parentUuid || null, // Always nest under the editing job itself if it has a uuid
     magic_prompt: false,
     advanced_mode: false,
     provider_params: providerParams,
