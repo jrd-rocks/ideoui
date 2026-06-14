@@ -1,0 +1,27 @@
+services:
+  ideoui:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./config:/app/config
+      - ./db:/app/db
+    environment:
+      - DATABASE_URL=sqlite:////app/db/ideoui.db
+    depends_on:
+      - garage
+
+  garage:
+    image: dxflrs/garage:v2.3.0
+    command: server --single-node --default-bucket
+    ports:
+      - "3900:3900"
+      - "3901:3901"
+      - "3902:3902"
+    volumes:
+      - ./r2_data:/var/lib/garage/data
+      - ./garage.toml:/etc/garage.toml
+    environment:
+      - GARAGE_DEFAULT_ACCESS_KEY=garage_access_key
+      - GARAGE_DEFAULT_SECRET_KEY=garage_secret_key
+      - GARAGE_DEFAULT_BUCKET=ideoui

@@ -51,5 +51,6 @@ def get_r2_config():
         "secret_access_key": r2_config.get("secret_access_key") or os.environ.get("R2_SECRET_ACCESS_KEY") or "",
         "bucket_name": r2_config.get("bucket_name") or os.environ.get("R2_BUCKET_NAME") or "",
         "public_url": r2_config.get("public_url") or os.environ.get("R2_PUBLIC_URL") or "",
+        "endpoint_url": r2_config.get("endpoint_url") or os.environ.get("R2_ENDPOINT_URL") or "",
     }
 
