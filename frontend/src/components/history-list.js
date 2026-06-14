@@ -241,7 +241,12 @@ export class HistoryList extends LitElement {
               ` : ''}
               ${item.parentUuid ? (() => {
                 const parentItem = this.historyItems.find(h => h.uuid === item.parentUuid);
-                const titleText = parentItem ? `Parent Prompt: ${parentItem.rawPrompt}` : 'Derived from a previous run';
+                if (!parentItem) {
+                  // Parent UUID is set but not found in history — likely stale data or a bug
+                  // where a wrong parent_uuid was stored. Log so it's visible in devtools.
+                  console.warn(`[HistoryList] Orphaned parentUuid on item ${item.uuid}: parent "${item.parentUuid}" not found in history.`);
+                }
+                const titleText = parentItem ? `Parent Prompt: ${parentItem.rawPrompt}` : 'Derived from a previous run (parent not in history)';
                 return html`
                   <span class="history-badge lineage history-lineage-badge" title="${titleText}">🌿 Derived run</span>
                 `;

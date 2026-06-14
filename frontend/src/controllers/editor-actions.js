@@ -121,11 +121,22 @@ export async function editorGenerate(ctx) {
   ctx.editorPinnedIndex = null;
   const providerParams = { ...(ctx.providerParams || editorJob.providerParams || {}) };
   const upsampledPrompt = ctx.promptWithAspectRatio(editorJob.upsampledPrompt, ctx.aspectRatioFromProviderParams(providerParams));
+
+  // Use the editing job's parentUuid (the actual history ancestor) as parent_uuid.
+  // The editing job's own uuid is ephemeral — it is never saved to GenerationHistory,
+  // so using it as parent_uuid would create an orphaned reference that shows a false
+  // "Derived" badge with no nesting in the history tree.
+  //
+  // For chaining within a session: after the first Generate the editing job's parentUuid
+  // is updated to the new result's uuid (see below), so every subsequent Generate from
+  // the same editor session nests under the previous generated image.
+  const parentUuid = editorJob.parentUuid || null;
+
   const result = await queueStore.sendJobRequest({
     raw_prompt: editorJob.rawPrompt,
     provider: editorJob.provider || editorJob.params.endpoint || ctx.selectedEndpoint,
     upsampler: editorJob.upsampler || 'deepseek',
-    parent_uuid: editorJob.uuid || editorJob.parentUuid || null, // Always nest under the editing job itself if it has a uuid
+    parent_uuid: parentUuid,
     magic_prompt: false,
     advanced_mode: false,
     provider_params: providerParams,
@@ -133,6 +144,14 @@ export async function editorGenerate(ctx) {
     upsampled_prompt: upsampledPrompt,
     chat_messages: editorJob.chatMessages || []
   });
+
+  // Update the editing job's parentUuid to the newly generated result's uuid.
+  // This chains any subsequent generates from the same editor session off the last
+  // real generated image rather than repeating the same ancestor.
+  if (result.uuid) {
+    queueStore.updateJob(editorJob.id, { parentUuid: result.uuid });
+  }
+
   const isHeld = result.held === true;
   if (isHeld) {
     ctx.showToast(`Generation held — will start when "Hold Generation" is released.`, 'info');
