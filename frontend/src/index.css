@@ -1765,6 +1765,10 @@ job-queue {
     font-size: 0.7rem;
     margin-left: 0.25rem;
     font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
 }
 
 /* Collapsed editing-parent row */

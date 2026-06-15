@@ -124,6 +124,28 @@ export class DisplayPanel extends LitElement {
     this.showBboxes = e.target.checked;
   }
 
+  /**
+   * Provider params to show in read-only views (held detail), filtered the same
+   * way the control panel does: only schema-defined inputs whose `visible_when`
+   * conditions are met. Hides both derived params (width/height) and params that
+   * are inert under the current preset (e.g. steps/guidance when preset != custom).
+   */
+  visibleProviderParams(job) {
+    const params = job.providerParams || {};
+    const inputs = this.providerSchemas?.[job.provider]?.inputs || {};
+    return Object.entries(params).filter(([key]) => {
+      const def = inputs[key];
+      if (!def) return false;
+      if (!def.visible_when) return true;
+      return Object.entries(def.visible_when).every(([dep, expected]) => params[dep] === expected);
+    });
+  }
+
+  formatParamLabel(key, definition) {
+    if (definition?.label) return definition.label;
+    return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+
   render() {
     const isCurrent = this.activeTab === 'current';
 
@@ -215,11 +237,11 @@ export class DisplayPanel extends LitElement {
                   <span class="param-value">${job.upsampler}</span>
                 </div>
               ` : ''}
-              ${Object.entries(job.providerParams || {}).map(([k, v]) => {
-                const formattedKey = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+              ${this.visibleProviderParams(job).map(([k, v]) => {
+                const inputs = this.providerSchemas?.[job.provider]?.inputs || {};
                 return html`
                   <div class="param-item">
-                    <span class="param-name">${formattedKey}</span>
+                    <span class="param-name">${this.formatParamLabel(k, inputs[k])}</span>
                     <span class="param-value">${typeof v === 'object' ? JSON.stringify(v) : v}</span>
                   </div>
                 `;

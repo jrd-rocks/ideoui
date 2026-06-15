@@ -112,7 +112,11 @@ def get_cancel_token(job_id: str) -> threading.Event:
 def describe_upsampler(upsampler, upsampler_params: dict) -> str:
     template = upsampler_params.get("template")
     label = upsampler.get_display_name() if upsampler else upsampler_params.get("provider") or "configured upsampler"
-    return f"{label} / {template}" if template else label
+    # Templates only apply to chat-engine upsamplers (they select a prompt
+    # template); HTTP upsamplers such as Ideogram Magic ignore the field, so
+    # don't surface a meaningless "/ template" suffix for them.
+    uses_template = upsampler is not None and "template" in (upsampler.config.get("inputs") or {})
+    return f"{label} / {template}" if (template and uses_template) else label
 
 
 async def execute_server_job(job_id: str, cancel_token: Optional[threading.Event] = None):
@@ -163,7 +167,7 @@ async def execute_server_job(job_id: str, cancel_token: Optional[threading.Event
                 job_id,
                 status="upsampling",
                 progress_step="upsampling",
-                display_text=f"Upsampling with {upsampler_label}: {raw_prompt}",
+                display_text=f"Upsampling with {upsampler_label}",
                 steps=build_steps(True, advanced_mode, "upsampling"),
             )
             await push_job("job_update", state)
