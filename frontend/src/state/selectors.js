@@ -172,16 +172,21 @@ export function buildItemTree(items) {
     if (item.uuid) byUuid.set(item.uuid, item);
   }
 
-  // Determine which items are "owned" by an editor session (its generation chain).
+  // Determine which items are "owned" by an editor session (its generation
+  // chain). The walk runs back from editorChainHeadUuid via parentUuid but
+  // stops at the editor's own parent (its origin) and at the editor itself, so
+  // the origin stays in the generic forest and the editor is never orphaned.
   const ownedByEditor = new Set();
-  const editorChildren = new Map(); // editorId -> [items] (newest first)
+  const editorChildren = new Map(); // editorId -> [items] (oldest first)
   for (const editor of list) {
     if (editor.status !== 'editing') continue;
+    const originId = editor.parentUuid ? (byUuid.get(editor.parentUuid)?.id ?? null) : null;
     const chain = [];
     let cursor = editor.editorChainHeadUuid ? byUuid.get(editor.editorChainHeadUuid) : null;
     let guard = 0;
     while (cursor && guard < 1000) {
       guard += 1;
+      if (cursor.id === originId || cursor.id === editor.id) break;
       if (ownedByEditor.has(cursor.id)) break;
       ownedByEditor.add(cursor.id);
       chain.unshift(cursor); // oldest first → natural chain order
@@ -192,17 +197,33 @@ export function buildItemTree(items) {
   }
 
   // Generic forest by parentUuid -> parent.uuid (excluding editor-owned items).
+  // An item whose parent is editor-owned (or absent) becomes a root so it is
+  // never silently dropped from the view.
   const childrenMap = new Map(); // itemId -> [items]
   const roots = [];
   for (const item of list) {
     if (ownedByEditor.has(item.id)) continue;
     const parent = item.parentUuid ? byUuid.get(item.parentUuid) : null;
-    if (parent && parent.id !== item.id) {
+    if (parent && parent.id !== item.id && !ownedByEditor.has(parent.id)) {
       if (!childrenMap.has(parent.id)) childrenMap.set(parent.id, []);
       childrenMap.get(parent.id).push(item);
     } else {
       roots.push(item);
     }
+  }
+
+  // Safety net: promote any non-owned item that a parent-linkage cycle left
+  // unreachable from the current roots, so the list is never empty.
+  const markReachable = (id, seen) => {
+    seen.add(id);
+    for (const kid of childrenMap.get(id) || []) markReachable(kid.id, seen);
+  };
+  for (;;) {
+    const seen = new Set();
+    for (const r of roots) markReachable(r.id, seen);
+    const orphan = list.find((it) => !ownedByEditor.has(it.id) && !seen.has(it.id));
+    if (!orphan) break;
+    roots.push(orphan);
   }
 
   const buildNode = (item, depth) => {
@@ -215,12 +236,19 @@ export function buildItemTree(items) {
   };
 
   const nodes = roots.map((item) => buildNode(item, 0));
-  // Editor nodes: attach their owned chain as children (collapsed by the renderer).
-  for (const node of nodes) {
-    if (node.item.status === 'editing' && editorChildren.has(node.item.id)) {
-      const chain = editorChildren.get(node.item.id);
-      node.children = chain.map((kid, i) => buildNode(kid, node.depth + 1 + i * 0));
+
+  // Attach each editor's owned chain as its children, no matter how deeply the
+  // editor is nested in the generic forest (collapsed by the renderer).
+  const attachChains = (nodeList) => {
+    for (const node of nodeList) {
+      if (node.item.status === 'editing' && editorChildren.has(node.item.id)) {
+        const chain = editorChildren.get(node.item.id);
+        node.children = chain.map((kid) => buildNode(kid, node.depth + 1));
+      }
+      if (node.children.length) attachChains(node.children);
     }
-  }
+  };
+  attachChains(nodes);
+
   return nodes;
 }
