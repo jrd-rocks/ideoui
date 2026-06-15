@@ -11,7 +11,7 @@ from backend.cancellation import JobCancelled, new_cancel_token
 from backend.database import SessionLocal
 from backend.job_state import build_steps, save_completed_history, update_job_record
 from backend.models import ActiveJob, SystemSetting
-from backend.providers import get_default_upsampler_id, get_generation_providers, get_upsampler_providers
+from backend.providers import get_chat_providers, get_default_upsampler_id, get_generation_providers, get_upsampler_providers
 from backend.storage import upload_previews_zip
 from backend.utils import clean_and_reorder_prompt_json
 from backend.ws import finish_websocket_stream, push_generation_progress, push_job, websocket_stream_callback, ws_manager
@@ -182,10 +182,18 @@ async def execute_server_job(job_id: str, cancel_token: Optional[threading.Event
             if is_json_mode:
                 upsampler_params["_source_raw_prompt"] = raw_prompt
                 final_prompt = clean_and_reorder_prompt_json(raw_prompt)
+                # describe_json is a chat-LLM capability (JSON -> human
+                # description). HTTP upsamplers such as Ideogram Magic can only
+                # do text -> JSON, so route the description to a chat-capable
+                # provider when the selected upsampler can't handle it.
+                describer = upsampler if hasattr(upsampler.engine, "describe_json") else next(iter(get_chat_providers().values()), None)
                 async with get_llm_semaphore():
-                    raw_prompt = await anyio.to_thread.run_sync(
-                        lambda: upsampler.describe_json(final_prompt, cancel_token=cancel_token)
-                    )
+                    if describer is not None and hasattr(describer.engine, "describe_json"):
+                        raw_prompt = await anyio.to_thread.run_sync(
+                            lambda: describer.describe_json(final_prompt, cancel_token=cancel_token)
+                        )
+                    else:
+                        raw_prompt = final_prompt
                 messages = []
             else:
                 aspect_ratio = provider_params.get("aspect_ratio", "1:1")

@@ -170,7 +170,7 @@ class AppStore {
   patchItem(itemId, updates, { debounce = true, fields = null } = {}) {
     if (!itemId || !updates) return Promise.resolve();
     if (debounce) {
-      const pending = { ...(this._pendingPayload?.(itemId) || {}), ...updates };
+      const pending = { ...(this._getPendingPayload(itemId) || {}), ...updates };
       this._setPendingPayload(itemId, pending);
       this.markPending(itemId, fields || Object.keys(updates));
       clearTimeout(this._patchTimers.get(itemId));
