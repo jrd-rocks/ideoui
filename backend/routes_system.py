@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, HTMLResponse
 
 import backend.prompts as prompts
-from backend.providers import get_provider_schemas, get_generation_providers, get_chat_providers
+from backend.providers import get_provider_schemas, get_chat_providers
 from backend.json_helpers import extract_json_from_text
 from backend.utils import clean_and_reorder_prompt_json
 
@@ -26,11 +26,6 @@ async def update_system_settings(request: Request):
         from backend.job_runner import set_hold_generation
         set_hold_generation(bool(data["hold_generation"]))
     return {"status": "updated"}
-
-@router.get("/api/endpoints")
-def get_endpoints():
-    providers = get_generation_providers()
-    return [{"name": pid, "type": p.config.get("type", "diffusion"), "default": p.config.get("default", False)} for pid, p in providers.items()]
 
 @router.get("/api/providers/chat")
 def get_chat_providers_route():

@@ -24,6 +24,7 @@ class ActiveJob(Base):
     job_id = Column(Text, unique=True, index=True, nullable=False)
     uuid = Column(Text, unique=True, index=True, nullable=False)
     parent_uuid = Column(Text, nullable=True, index=True)
+    editor_chain_head_uuid = Column(Text, nullable=True, index=True)
     status = Column(Text, index=True, nullable=False, default="pending")
     provider = Column(Text, nullable=False)
     upsampler = Column(Text, nullable=True)

@@ -103,35 +103,31 @@ class GenericProvider(BaseProvider):
         return normalized
 
     # Diffusion interface
-    def execute(self, prompt: str, ui_params: Dict[str, Any]) -> List[str]:
+    def execute(self, prompt: str, ui_params: Dict[str, Any], cancel_token=None) -> List[str]:
         if not hasattr(self.engine, "execute"):
             raise NotImplementedError(f"Engine {self.config.get('engine')} does not support execute")
         params = self.normalize_parameters(ui_params)
-        return self.engine.execute(self.config, prompt, params)
+        return self.engine.execute(self.config, prompt, params, cancel_token=cancel_token)
 
-    def execute_stream(self, prompt: str, ui_params: Dict[str, Any], progress_callback: Optional[Callable] = None) -> List[str]:
+    def execute_stream(self, prompt: str, ui_params: Dict[str, Any], progress_callback: Optional[Callable] = None, cancel_token=None) -> List[str]:
         if not hasattr(self.engine, "execute_stream"):
             raise NotImplementedError(f"Engine {self.config.get('engine')} does not support execute_stream")
         params = self.normalize_parameters(ui_params)
-        return self.engine.execute_stream(self.config, prompt, params, progress_callback)
+        return self.engine.execute_stream(self.config, prompt, params, progress_callback, cancel_token=cancel_token)
 
     # LLM interface
-    def query(self, messages: List[Dict[str, str]], stream_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    def query(self, messages: List[Dict[str, str]], stream_callback: Optional[Callable] = None, cancel_token=None) -> Dict[str, Any]:
         if not hasattr(self.engine, "query"):
             raise NotImplementedError(f"Engine {self.config.get('engine')} does not support query")
-        return self.engine.query(self.config, messages, stream_callback)
+        return self.engine.query(self.config, messages, stream_callback, cancel_token=cancel_token)
 
-    def upsample_prompt(self, raw_prompt: str, aspect_ratio: str, ui_params: Dict[str, Any], stream_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    def upsample_prompt(self, raw_prompt: str, aspect_ratio: str, ui_params: Dict[str, Any], stream_callback: Optional[Callable] = None, cancel_token=None) -> Dict[str, Any]:
         if not hasattr(self.engine, "upsample_prompt"):
             raise NotImplementedError(f"Engine {self.config.get('engine')} does not support upsample_prompt")
         params = self.normalize_parameters(ui_params)
-        return self.engine.upsample_prompt(self.config, raw_prompt, aspect_ratio, params, stream_callback)
+        return self.engine.upsample_prompt(self.config, raw_prompt, aspect_ratio, params, stream_callback, cancel_token=cancel_token)
 
-    def describe_json(self, json_prompt: str) -> str:
+    def describe_json(self, json_prompt: str, cancel_token=None) -> str:
         if not hasattr(self.engine, "describe_json"):
             raise NotImplementedError(f"Engine {self.config.get('engine')} does not support describe_json")
-        return self.engine.describe_json(self.config, json_prompt)
-
-    def cancel(self):
-        if hasattr(self.engine, "cancel"):
-            self.engine.cancel()
+        return self.engine.describe_json(self.config, json_prompt, cancel_token=cancel_token)

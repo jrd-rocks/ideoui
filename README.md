@@ -46,8 +46,11 @@ Here is how the project is structured:
 │   ├── providers/              # TOML configurations for DeepSeek and generation endpoints
 │   └── upsample-prompts/       # System prompts for upsample templates (e.g. v1, v4)
 ├── static/                     # Built frontend assets served by the backend
+├── docs/
+│   ├── architecture.md         # High-level system architecture overview
+│   ├── engine.md               # Documentation for the TOML-driven generic provider engines
+│   └── docker.md               # Docker and Docker Compose deployment guide
 ├── server.py                   # Main entry point to run the FastAPI server
-├── engine.md                   # Documentation for the TOML-driven generic provider engines
 ├── alembic.ini                 # Migration config
 └── pyproject.toml              # Python dependencies
 ```
@@ -56,7 +59,7 @@ Here is how the project is structured:
 
 IdeoUI features a modular, configuration-driven system for integrating image generation and LLM upsampling backends. Instead of hardcoding API classes, all selectable providers are defined in `.toml` files located under `config/providers/` and resolved dynamically.
 
-For detailed documentation on the architecture, templating namespaces (`{{auth}}`, `{{inputs}}`, `{{runtime}}`), and customization schemas, please see [engine.md](engine.md).
+For detailed documentation on the architecture, templating namespaces (`{{auth}}`, `{{inputs}}`, `{{runtime}}`), and customization schemas, please see [docs/engine.md](docs/engine.md). A high-level overview of the system architecture is available in [docs/architecture.md](docs/architecture.md).
 
 ---
 
@@ -102,7 +105,7 @@ npm install
 
 ### Docker Deployment
 
-For instructions on deploying the application and a local S3 storage mock using Docker and Docker Compose, please read [docker.md](docker.md).
+For instructions on deploying the application and a local S3 storage mock using Docker and Docker Compose, please read [docs/docker.md](docs/docker.md).
 
 ### Development Mode (Frontend & Backend)
 

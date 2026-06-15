@@ -1,5 +1,12 @@
 import { extractAndRepairJson } from '../utils/helpers.js';
-import { queueStore } from '../utils/store.js';
+import { appStore } from '../state/app-store.js';
+import { selectActiveItem } from '../state/selectors.js';
+import {
+  aspectRatioFromProviderParams,
+  promptWithAspectRatio,
+  providerParamsFromHistory,
+} from './generator-state.js';
+import { scheduleSessionSave } from '../state/session.js';
 
 
 export function promptToDraftJson(promptText) {
@@ -10,32 +17,35 @@ export function promptToDraftJson(promptText) {
   }
 }
 
+function activeItem() {
+  return selectActiveItem(appStore.getState());
+}
+
+function resolveUpsamplerId(explicit) {
+  if (explicit && explicit !== 'deepseek') return explicit;
+  return appStore.getState().generator.selectedUpsampler || appStore.defaultUpsamplerId() || null;
+}
+
 
 export function rememberEditorSnapshot(ctx, jobId, promptText) {
   if (!jobId || !promptText) return;
-  const stack = ctx.editorUndoStacks.get(jobId) || [];
-  if (stack[stack.length - 1] !== promptText) {
-    stack.push(promptText);
-    if (stack.length > 80) stack.shift();
-    ctx.editorUndoStacks.set(jobId, stack);
-    ctx.editorRedoStacks.set(jobId, []);
-  }
+  appStore.dispatch({ type: 'PUSH_UNDO', itemId: jobId, prompt: promptText });
 }
 
 
 export async function ensureEditableEditorJob(ctx, nextPrompt = null) {
-  const current = ctx.jobQueue.find(j => j.id === ctx.selectedJobId);
+  const state = appStore.getState();
+  const current = selectActiveItem(state);
   if (current?.status === 'editing') return current;
   if (!ctx.inspectorItem) return current;
 
   const item = ctx.inspectorItem;
-  const provider = item.params?.provider || item.params?.endpoint || ctx.selectedEndpoint;
-  const providerParams = ctx.providerParamsFromHistory(item);
-  const upsampledPrompt = ctx.promptWithAspectRatio(nextPrompt || item.upsampledPrompt, ctx.aspectRatioFromProviderParams(providerParams));
-  const result = await queueStore.sendJobRequest({
+  const providerParams = providerParamsFromHistory(item);
+  const upsampledPrompt = promptWithAspectRatio(nextPrompt || item.upsampledPrompt, aspectRatioFromProviderParams(providerParams));
+  const result = await appStore.createItem({
     raw_prompt: item.rawPrompt,
-    provider,
-    upsampler: item.params?.upsampler || 'deepseek',
+    provider: item.params?.provider || item.params?.endpoint || state.generator.selectedEndpoint,
+    upsampler: resolveUpsamplerId(item.params?.upsampler),
     parent_uuid: item.uuid || null,
     magic_prompt: false,
     advanced_mode: true,
@@ -49,116 +59,97 @@ export async function ensureEditableEditorJob(ctx, nextPrompt = null) {
     ],
     job_type: "editing"
   });
-  const job = queueStore.getSelectedJob();
+  const job = selectActiveItem(appStore.getState());
   if (job) {
-    queueStore.updateJob(job.id, { backgroundImage: item.images?.[0] || null });
+    appStore.updateItem(job.id, { backgroundImage: item.images?.[0] || null }, { debounce: false, patchFields: [] });
     rememberEditorSnapshot(ctx, job.id, item.upsampledPrompt);
   }
   ctx.inspectorItem = null;
+  appStore.dispatch({ type: 'SET_INSPECTOR', uuid: '' });
   window.location.hash = '#/editor/' + result.job_id;
-  return queueStore.getSelectedJob();
+  return selectActiveItem(appStore.getState());
 }
 
 
 export async function updateEditorPrompt(ctx, nextPrompt) {
   const job = await ensureEditableEditorJob(ctx, nextPrompt);
   if (!job) return;
-  const alreadyEditing = ctx.hasPendingJobPatch?.(job.id);
+  const alreadyEditing = appStore.hasPendingPatch?.(job.id);
   if (job.upsampledPrompt !== nextPrompt && !alreadyEditing) {
     rememberEditorSnapshot(ctx, job.id, job.upsampledPrompt);
   }
   const draftJson = promptToDraftJson(nextPrompt);
-  queueStore.updateJob(
-    job.id,
-    { upsampledPrompt: nextPrompt, draftJson },
-    { local: true, fields: ['upsampledPrompt', 'draftJson'] }
-  );
-  if (ctx.scheduleJobPatch) {
-    ctx.scheduleJobPatch(job.id, { upsampledPrompt: nextPrompt, draftJson });
-  } else {
-    ctx.patchServerJob(job.id, { upsampledPrompt: nextPrompt, draftJson });
-  }
-  ctx.scheduleSessionSave();
+  appStore.updateItem(job.id, { upsampledPrompt: nextPrompt, draftJson });
+  scheduleSessionSave();
 }
 
 
 export function editorUndo(ctx) {
-  const job = queueStore.getSelectedJob();
+  const job = activeItem();
   if (!job) return;
-  const stack = ctx.editorUndoStacks.get(job.id) || [];
-  const previous = stack.pop();
+  const undoStack = (appStore.getState().editor.undoStacks[job.id] || []).slice();
+  const previous = undoStack.pop();
   if (!previous) return;
-  const redo = ctx.editorRedoStacks.get(job.id) || [];
-  redo.push(job.upsampledPrompt);
-  ctx.editorUndoStacks.set(job.id, stack);
-  ctx.editorRedoStacks.set(job.id, redo);
+  const redoStack = (appStore.getState().editor.redoStacks[job.id] || []).slice();
+  redoStack.push(job.upsampledPrompt);
+  appStore.dispatch({ type: 'SET_UNDO_REDO', itemId: job.id, undoStack, redoStack });
   const draftJson = promptToDraftJson(previous);
-  queueStore.updateJob(job.id, { upsampledPrompt: previous, draftJson });
-  ctx.patchServerJob(job.id, { upsampledPrompt: previous, draftJson });
+  appStore.updateItem(job.id, { upsampledPrompt: previous, draftJson }, { debounce: false });
 }
 
 
 export function editorRedo(ctx) {
-  const job = queueStore.getSelectedJob();
+  const job = activeItem();
   if (!job) return;
-  const stack = ctx.editorRedoStacks.get(job.id) || [];
-  const next = stack.pop();
+  const redoStack = (appStore.getState().editor.redoStacks[job.id] || []).slice();
+  const next = redoStack.pop();
   if (!next) return;
-  const undo = ctx.editorUndoStacks.get(job.id) || [];
-  undo.push(job.upsampledPrompt);
-  ctx.editorRedoStacks.set(job.id, stack);
-  ctx.editorUndoStacks.set(job.id, undo);
+  const undoStack = (appStore.getState().editor.undoStacks[job.id] || []).slice();
+  undoStack.push(job.upsampledPrompt);
+  appStore.dispatch({ type: 'SET_UNDO_REDO', itemId: job.id, undoStack, redoStack });
   const draftJson = promptToDraftJson(next);
-  queueStore.updateJob(job.id, { upsampledPrompt: next, draftJson });
-  ctx.patchServerJob(job.id, { upsampledPrompt: next, draftJson });
+  appStore.updateItem(job.id, { upsampledPrompt: next, draftJson }, { debounce: false });
 }
 
 
 export async function editorGenerate(ctx) {
-  const editorJob = queueStore.jobQueue.find(j => j.id === ctx.selectedJobId);
+  const state = appStore.getState();
+  const editorJob = selectActiveItem(state);
   if (!editorJob) return;
 
-  ctx.editorPinnedIndex = null;
-  const providerParams = { ...(ctx.providerParams || editorJob.providerParams || {}) };
-  const upsampledPrompt = ctx.promptWithAspectRatio(editorJob.upsampledPrompt, ctx.aspectRatioFromProviderParams(providerParams));
+  appStore.dispatch({ type: 'SET_EDITOR', pinnedIndex: null });
+  const providerParams = { ...(state.generator.providerParams || editorJob.providerParams || {}) };
+  const upsampledPrompt = promptWithAspectRatio(editorJob.upsampledPrompt, aspectRatioFromProviderParams(providerParams));
 
-  // Use the editing job's parentUuid (the actual history ancestor) as parent_uuid.
-  // The editing job's own uuid is ephemeral — it is never saved to GenerationHistory,
-  // so using it as parent_uuid would create an orphaned reference that shows a false
-  // "Derived" badge with no nesting in the history tree.
-  //
-  // For chaining within a session: after the first Generate the editing job's parentUuid
-  // is updated to the new result's uuid (see below), so every subsequent Generate from
-  // the same editor session nests under the previous generated image.
-  const parentUuid = editorJob.parentUuid || null;
+  // Chain from the editor session's persisted chain head (history ancestor for
+  // the first generate, the previous result's uuid afterwards). Bug #6.
+  const parentUuid = editorJob.editorChainHeadUuid || editorJob.parentUuid || null;
 
-  const result = await queueStore.sendJobRequest({
+  const result = await appStore.createItem({
     raw_prompt: editorJob.rawPrompt,
-    provider: editorJob.provider || editorJob.params.endpoint || ctx.selectedEndpoint,
-    upsampler: editorJob.upsampler || 'deepseek',
+    provider: editorJob.provider || editorJob.params?.endpoint || state.generator.selectedEndpoint,
+    upsampler: resolveUpsamplerId(editorJob.upsampler),
     parent_uuid: parentUuid,
     magic_prompt: false,
     advanced_mode: false,
     provider_params: providerParams,
-    upsampler_params: editorJob.upsamplerParams || { template: editorJob.params.upsampleTemplate || 'v1' },
+    upsampler_params: editorJob.upsamplerParams || { template: editorJob.params?.upsampleTemplate || 'v1' },
     upsampled_prompt: upsampledPrompt,
     chat_messages: editorJob.chatMessages || []
   });
 
-  // Update the editing job's parentUuid to the newly generated result's uuid.
-  // This chains any subsequent generates from the same editor session off the last
-  // real generated image rather than repeating the same ancestor.
+  // Advance the editor chain head to the new result and persist it (survives
+  // reload / device switch). Bug #6.
   if (result.uuid) {
-    queueStore.updateJob(editorJob.id, { parentUuid: result.uuid });
+    appStore.updateItem(editorJob.id, { editorChainHeadUuid: result.uuid }, { debounce: false });
   }
 
-  const isHeld = result.held === true;
-  if (isHeld) {
+  if (result.held === true) {
     ctx.showToast(`Generation held — will start when "Hold Generation" is released.`, 'info');
   } else {
     ctx.showToast(`Queued generation for "${editorJob.rawPrompt.substring(0, 30)}..."`, 'success');
   }
-  ctx.activeLeftTab = 'progress';
+  appStore.dispatch({ type: 'SET_PANEL', leftTab: 'progress' });
   window.location.hash = '#/job/' + result.job_id;
 }
 
@@ -167,7 +158,7 @@ export async function sendEditorChat(ctx, text) {
   const job = await ensureEditableEditorJob(ctx);
   if (!job) return;
 
-  ctx.isRefining = true;
+  appStore.dispatch({ type: 'SET_UI', partial: { isRefining: true } });
   ctx.requestUpdate();
 
   const updatedMessages = [...(job.chatMessages || []), { role: "user", content: text }];
@@ -179,14 +170,10 @@ export async function sendEditorChat(ctx, text) {
     }
   }
   if (lastAssistantIdx >= 0) {
-    updatedMessages[lastAssistantIdx] = {
-      ...updatedMessages[lastAssistantIdx],
-      content: job.upsampledPrompt
-    };
+    updatedMessages[lastAssistantIdx] = { ...updatedMessages[lastAssistantIdx], content: job.upsampledPrompt };
   }
 
-  queueStore.updateJob(job.id, { chatMessages: [...updatedMessages, { role: "assistant", content: "", streaming: true }] });
-  ctx.patchServerJob(job.id, { chatMessages: updatedMessages });
+  appStore.updateItem(job.id, { chatMessages: [...updatedMessages, { role: "assistant", content: "", streaming: true }] });
 
   try {
     const response = await fetch(`/api/jobs/${encodeURIComponent(job.id)}/chat`, {
@@ -208,21 +195,13 @@ export async function sendEditorChat(ctx, text) {
     let assistantReply = (data.upsampledPrompt || data.upsampled_prompt || data.content || '').trim();
     assistantReply = await extractAndRepairJson(assistantReply);
     const finalMessages = [...updatedMessages, { role: "assistant", content: assistantReply }];
-    queueStore.updateJob(job.id, {
-      upsampledPrompt: assistantReply,
-      chatMessages: finalMessages
-    });
-    ctx.patchServerJob(job.id, {
-      upsampledPrompt: assistantReply,
-      chatMessages: finalMessages
-    });
+    appStore.updateItem(job.id, { upsampledPrompt: assistantReply, chatMessages: finalMessages });
   } catch (err) {
     console.error("AI refinement failed:", err);
     const finalMessages = [...updatedMessages, { role: "assistant", content: `Error: ${err.message}` }];
-    queueStore.updateJob(job.id, { chatMessages: finalMessages });
-    ctx.patchServerJob(job.id, { chatMessages: finalMessages });
+    appStore.updateItem(job.id, { chatMessages: finalMessages });
   } finally {
-    ctx.isRefining = false;
+    appStore.dispatch({ type: 'SET_UI', partial: { isRefining: false } });
     ctx.requestUpdate();
   }
 }

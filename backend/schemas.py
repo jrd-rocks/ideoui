@@ -24,7 +24,7 @@ class HistoryItemResponse(HistoryItemBase):
 class JobCreate(BaseModel):
     raw_prompt: str = Field(validation_alias=AliasChoices("raw_prompt", "rawPrompt"))
     provider: str
-    upsampler: Optional[str] = "deepseek"
+    upsampler: Optional[str] = None
     parent_uuid: Optional[str] = Field(default=None, validation_alias=AliasChoices("parent_uuid", "parentUuid"))
     magic_prompt: bool = Field(default=True, validation_alias=AliasChoices("magic_prompt", "magicPrompt"))
     advanced_mode: bool = Field(default=False, validation_alias=AliasChoices("advanced_mode", "advancedMode"))

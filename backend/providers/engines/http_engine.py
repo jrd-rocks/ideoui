@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 import requests
 
+from backend.cancellation import JobCancelled, token_cancelled
 from backend.storage import upload_image
 from backend.utils import clean_and_reorder_prompt_json
 from backend.provider_loader import _resolve_templates
@@ -14,15 +15,6 @@ from backend.provider_loader import _resolve_templates
 class HttpEngine:
     def __init__(self):
         self._active_response = None
-
-    def cancel(self):
-        resp = self._active_response
-        if resp is not None:
-            self._active_response = None
-            try:
-                resp.close()
-            except Exception:
-                pass
 
     def _build_request_args(self, config: Dict[str, Any], runtime_context: Dict[str, Any], inputs_context: Dict[str, Any]) -> tuple[str, str, Dict[str, Any], Dict[str, str], Optional[Dict[str, str]]]:
         auth_context = config.get("auth", {})
@@ -68,8 +60,8 @@ class HttpEngine:
             if k in payload and isinstance(payload[k], str) and payload[k].strip().startswith("{"):
                 payload[k] = clean_and_reorder_prompt_json(payload[k])
 
-        # Type conversion (bool strings -> bools) if the API expects it...
-        # Wait, the prompt_upsampling is sent as a string "true"/"false" in the old ModalProvider
+        # Type conversion (bool strings -> bools) if the API expects it.
+        # prompt_upsampling is sent as a string "true"/"false".
         if "prompt_upsampling" in payload and isinstance(payload["prompt_upsampling"], str):
             payload["prompt_upsampling"] = payload["prompt_upsampling"].lower()
 
@@ -87,7 +79,9 @@ class HttpEngine:
             
         return method, url, headers, kwargs
 
-    def execute(self, config: Dict[str, Any], prompt: str, params: Dict[str, Any]) -> List[str]:
+    def execute(self, config: Dict[str, Any], prompt: str, params: Dict[str, Any], cancel_token=None) -> List[str]:
+        if token_cancelled(cancel_token):
+            raise JobCancelled()
         runtime_context = {"prompt": prompt, "raw_prompt": params.get("_source_raw_prompt", prompt)}
         method, url, headers, kwargs = self._build_request_args(config, runtime_context, params)
         
@@ -97,6 +91,12 @@ class HttpEngine:
         print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json') or kwargs.get('params')}", flush=True)
             
         response = requests.request(method, url, headers=headers, **kwargs)
+        if token_cancelled(cancel_token):
+            try:
+                response.close()
+            except Exception:
+                pass
+            raise JobCancelled()
         if config.get("logging", False):
             print(f"[HttpEngine] Response status={response.status_code} body_len={len(response.content)}", flush=True)
             if response.headers.get("Content-Type", "").startswith("application/json") or len(response.text) < 1000:
@@ -124,10 +124,10 @@ class HttpEngine:
 
         return self._upload_images(image_bytes_list)
 
-    def execute_stream(self, config: Dict[str, Any], prompt: str, params: Dict[str, Any], progress_callback: Optional[Callable] = None) -> List[str]:
+    def execute_stream(self, config: Dict[str, Any], prompt: str, params: Dict[str, Any], progress_callback: Optional[Callable] = None, cancel_token=None) -> List[str]:
         stream_cfg = config.get("streaming", {})
         if not stream_cfg.get("enabled", False):
-            return self.execute(config, prompt, params)
+            return self.execute(config, prompt, params, cancel_token=cancel_token)
             
         runtime_context = {"prompt": prompt, "raw_prompt": params.get("_source_raw_prompt", prompt)}
         method, url, headers, kwargs = self._build_request_args(config, runtime_context, params)
@@ -139,38 +139,44 @@ class HttpEngine:
         print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json') or kwargs.get('params')}", flush=True)
             
         self._active_response = requests.request(method, url, headers=headers, **kwargs)
-        self._active_response.raise_for_status()
-        
-        prefix = stream_cfg.get("data_prefix", "data: ")
-        type_field = stream_cfg.get("type_field", "type")
-        events = stream_cfg.get("events", {})
-        result_cfg = stream_cfg.get("result", {})
-        error_cfg = stream_cfg.get("error", {})
-        
-        image_bytes_list = None
-        for line in self._active_response.iter_lines(decode_unicode=True):
-            if not line or not line.startswith(prefix):
-                continue
-            payload = json.loads(line[len(prefix):])
-            if config.get("logging", False):
-                print(f"[HttpEngine] Stream payload: {payload}", flush=True)
+        try:
+            self._active_response.raise_for_status()
             
-            event_type = payload.get(type_field)
-            if event_type == events.get("status") and progress_callback:
-                progress_callback("status", payload)
-            elif event_type == events.get("step") and progress_callback:
-                progress_callback("step", payload)
-            elif event_type == events.get("complete"):
-                # Extract
-                data = payload
-                for p in result_cfg.get("field", "images").split("."):
-                    data = data.get(p, {})
-                if result_cfg.get("encoding") == "base64":
-                    image_bytes_list = [base64.b64decode(b) for b in data]
-                else:
-                    image_bytes_list = data # assuming list of bytes if not base64
-            elif event_type == events.get("error"):
-                raise ValueError(payload.get(error_cfg.get("field", "message"), "Unknown error"))
+            prefix = stream_cfg.get("data_prefix", "data: ")
+            type_field = stream_cfg.get("type_field", "type")
+            events = stream_cfg.get("events", {})
+            result_cfg = stream_cfg.get("result", {})
+            error_cfg = stream_cfg.get("error", {})
+            
+            image_bytes_list = None
+            for line in self._active_response.iter_lines(decode_unicode=True):
+                if token_cancelled(cancel_token):
+                    print("[HttpEngine] Cancel token set; aborting stream.", flush=True)
+                    raise JobCancelled()
+                if not line or not line.startswith(prefix):
+                    continue
+                payload = json.loads(line[len(prefix):])
+                if config.get("logging", False):
+                    print(f"[HttpEngine] Stream payload: {payload}", flush=True)
+                
+                event_type = payload.get(type_field)
+                if event_type == events.get("status") and progress_callback:
+                    progress_callback("status", payload)
+                elif event_type == events.get("step") and progress_callback:
+                    progress_callback("step", payload)
+                elif event_type == events.get("complete"):
+                    # Extract
+                    data = payload
+                    for p in result_cfg.get("field", "images").split("."):
+                        data = data.get(p, {})
+                    if result_cfg.get("encoding") == "base64":
+                        image_bytes_list = [base64.b64decode(b) for b in data]
+                    else:
+                        image_bytes_list = data # assuming list of bytes if not base64
+                elif event_type == events.get("error"):
+                    raise ValueError(payload.get(error_cfg.get("field", "message"), "Unknown error"))
+        finally:
+            self._active_response = None
 
         if image_bytes_list is None:
             raise ValueError("Stream ended without complete event")
@@ -187,7 +193,9 @@ class HttpEngine:
             urls.append(upload_image(img_bytes, filename))
         return urls
 
-    def upsample_prompt(self, config: Dict[str, Any], raw_prompt: str, aspect_ratio: str, params: Dict[str, Any], stream_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    def upsample_prompt(self, config: Dict[str, Any], raw_prompt: str, aspect_ratio: str, params: Dict[str, Any], stream_callback: Optional[Callable] = None, cancel_token=None) -> Dict[str, Any]:
+        if token_cancelled(cancel_token):
+            raise JobCancelled()
         # Specific for LLM providers backed by HTTP engine (e.g. Ideogram Magic)
         runtime_context = {"raw_prompt": raw_prompt, "prompt": raw_prompt}
         # Normalize aspect ratio from W:H format (e.g., "1:1") to WxH format (e.g., "1x1") for Ideogram API compatibility
@@ -204,6 +212,12 @@ class HttpEngine:
             print(f"[HttpEngine] Upsample request to: {url}", flush=True)
         
         response = requests.request(method, url, headers=headers, **kwargs)
+        if token_cancelled(cancel_token):
+            try:
+                response.close()
+            except Exception:
+                pass
+            raise JobCancelled()
         if config.get("logging", False):
             print(f"[HttpEngine] Raw upsample response status={response.status_code}:\n{response.text}", flush=True)
         response.raise_for_status()

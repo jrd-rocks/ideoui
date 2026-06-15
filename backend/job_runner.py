@@ -1,15 +1,17 @@
 import asyncio
 import os
 import json
+import threading
 from typing import Optional
 
 import anyio
 
 
+from backend.cancellation import JobCancelled, new_cancel_token
 from backend.database import SessionLocal
 from backend.job_state import build_steps, save_completed_history, update_job_record
 from backend.models import ActiveJob, SystemSetting
-from backend.providers import get_generation_providers, get_upsampler_providers
+from backend.providers import get_default_upsampler_id, get_generation_providers, get_upsampler_providers
 from backend.storage import upload_previews_zip
 from backend.utils import clean_and_reorder_prompt_json
 from backend.ws import finish_websocket_stream, push_generation_progress, push_job, websocket_stream_callback, ws_manager
@@ -18,6 +20,7 @@ from backend.ws import finish_websocket_stream, push_generation_progress, push_j
 llm_semaphore: Optional[asyncio.Semaphore] = None
 provider_semaphores: dict[str, asyncio.Semaphore] = {}
 job_tasks: dict[str, asyncio.Task] = {}
+cancel_tokens: dict[str, threading.Event] = {}
 def get_hold_generation() -> bool:
     try:
         with SessionLocal() as db:
@@ -81,20 +84,29 @@ def get_llm_semaphore() -> asyncio.Semaphore:
 
 
 def schedule_job(job_id: str):
-    task = asyncio.create_task(execute_server_job(job_id))
+    token = cancel_tokens.setdefault(job_id, new_cancel_token())
+    token.clear()
+    task = asyncio.create_task(execute_server_job(job_id, token))
     job_tasks[job_id] = task
     task.add_done_callback(lambda _task, finished_job_id=job_id: job_tasks.pop(finished_job_id, None))
 
 
 def cancel_job_task(job_id: str):
+    token = cancel_tokens.pop(job_id, None)
+    if token is not None:
+        token.set()
     task = job_tasks.pop(job_id, None)
     if task and not task.done():
         task.cancel()
-    # Also cancel any active streaming response on the provider
-    from backend.providers import get_generation_providers
-    for provider in get_generation_providers().values():
-        if hasattr(provider, 'cancel'):
-            provider.cancel()
+
+
+def get_cancel_token(job_id: str) -> threading.Event:
+    """Return (creating if needed) the per-job cancellation token.
+
+    Used by request-scoped flows (e.g. editor chat) so that deleting the job
+    can interrupt an in-flight provider stream.
+    """
+    return cancel_tokens.setdefault(job_id, new_cancel_token())
 
 
 def describe_upsampler(upsampler, upsampler_params: dict) -> str:
@@ -103,7 +115,7 @@ def describe_upsampler(upsampler, upsampler_params: dict) -> str:
     return f"{label} / {template}" if template else label
 
 
-async def execute_server_job(job_id: str):
+async def execute_server_job(job_id: str, cancel_token: Optional[threading.Event] = None):
     try:
         with SessionLocal() as db:
             job = db.query(ActiveJob).filter(ActiveJob.job_id == job_id).first()
@@ -143,7 +155,7 @@ async def execute_server_job(job_id: str):
             return
 
         if not final_prompt and (magic_prompt or is_json_mode):
-            upsampler = get_upsampler_providers().get(upsampler_id or "deepseek")
+            upsampler = get_upsampler_providers().get(upsampler_id or get_default_upsampler_id())
             if not upsampler:
                 raise ValueError(f"Unknown upsampler: {upsampler_id}")
             upsampler_label = describe_upsampler(upsampler, upsampler_params)
@@ -167,18 +179,18 @@ async def execute_server_job(job_id: str):
                 upsampler_params["_source_raw_prompt"] = raw_prompt
                 final_prompt = clean_and_reorder_prompt_json(raw_prompt)
                 async with get_llm_semaphore():
-                    raw_prompt = await anyio.to_thread.run_sync(upsampler.describe_json, final_prompt)
+                    raw_prompt = await anyio.to_thread.run_sync(
+                        lambda: upsampler.describe_json(final_prompt, cancel_token=cancel_token)
+                    )
                 messages = []
             else:
                 aspect_ratio = provider_params.get("aspect_ratio", "1:1")
                 async with get_llm_semaphore():
                     stream_emit = websocket_stream_callback(job_id, "progress")
                     result = await anyio.to_thread.run_sync(
-                        upsampler.upsample_prompt,
-                        raw_prompt,
-                        aspect_ratio,
-                        upsampler_params,
-                        stream_emit,
+                        lambda: upsampler.upsample_prompt(
+                            raw_prompt, aspect_ratio, upsampler_params, stream_emit, cancel_token=cancel_token
+                        )
                     )
                 final_prompt = result["content"]
                 messages = result["messages"] + [{"role": "assistant", "content": final_prompt}]
@@ -260,11 +272,14 @@ async def execute_server_job(job_id: str):
         async with semaphore:
             if hasattr(provider, "execute_stream"):
                 images = await anyio.to_thread.run_sync(
-                    provider.execute_stream, final_prompt or raw_prompt,
-                    provider_params, on_generation_progress,
+                    lambda: provider.execute_stream(
+                        final_prompt or raw_prompt, provider_params, on_generation_progress, cancel_token=cancel_token
+                    )
                 )
             else:
-                images = await anyio.to_thread.run_sync(provider.execute, final_prompt or raw_prompt, provider_params)
+                images = await anyio.to_thread.run_sync(
+                    lambda: provider.execute(final_prompt or raw_prompt, provider_params, cancel_token=cancel_token)
+                )
 
         previews_url = None
         print(f"[Jobs] Collected {len(collected_previews)} preview steps for zip upload", flush=True)
@@ -300,6 +315,11 @@ async def execute_server_job(job_id: str):
         )
         print(f"[Jobs] update_job_record returned previewsUrl={state.get('previewsUrl')}", flush=True)
         await push_job("job_completed", state)
+    except JobCancelled:
+        print(f"[Jobs] Job {job_id} cancelled via token.", flush=True)
+    except asyncio.CancelledError:
+        print(f"[Jobs] Job {job_id} cancelled.", flush=True)
+        raise
     except Exception as exc:
         print(f"[Jobs] Job {job_id} failed: {exc}", flush=True)
         try:

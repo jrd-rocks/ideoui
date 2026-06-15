@@ -76,10 +76,7 @@ def on_startup():
         alembic_cfg.set_main_option("script_location", str(STATIC_DIR.parent / "backend" / "migrations"))
 
         print("[Startup] Running database migrations...")
-        try:
-            command.upgrade(alembic_cfg, "head")
-        except Exception as ex:
-            print(f"[Startup] Ignoring db migration error: {ex}")
+        command.upgrade(alembic_cfg, "head")
         print("[Startup] Database migrations completed.")
 
         with SessionLocal() as db:

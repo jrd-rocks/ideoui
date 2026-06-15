@@ -1,5 +1,6 @@
 import { LitElement, html } from 'lit';
 import { icon } from '../utils/icons.js';
+import { buildItemTree } from '../state/selectors.js';
 
 export class JobQueue extends LitElement {
   static properties = {
@@ -77,27 +78,10 @@ export class JobQueue extends LitElement {
 
   getTreeRoots() {
     if (!this.jobQueue || this.jobQueue.length === 0) return [];
-
-    const nodesMap = new Map();
-    for (const job of this.jobQueue) {
-      nodesMap.set(job.id, { job, children: [] });
-      if (job.uuid) nodesMap.set(job.uuid, nodesMap.get(job.id));
-    }
-
-    const roots = [];
-    for (const node of nodesMap.values()) {
-      if (node.visited) continue;
-      node.visited = true;
-
-      const parentUuid = node.job.parentUuid;
-      if (parentUuid && nodesMap.has(parentUuid)) {
-        nodesMap.get(parentUuid).children.push(node);
-      } else {
-        roots.push(node);
-      }
-    }
-
-    return roots;
+    // Stable, correctly-nested tree from the unified selector (bug #4 fix).
+    const nodes = buildItemTree(this.jobQueue);
+    const adapt = (n) => ({ job: n.item, children: (n.children || []).map(adapt) });
+    return nodes.map(adapt);
   }
 
   /** Return status badge templates for the children, e.g. a HELD badge or GENERATING badge. */

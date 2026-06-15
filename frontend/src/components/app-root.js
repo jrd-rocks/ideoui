@@ -1,29 +1,25 @@
 import { LitElement, html } from 'lit';
 import { initHistoryApi, getAllHistory, deleteHistoryItem, clearAllHistory } from '../utils/history-api.js';
-import { queueStore } from '../utils/store.js';
 import { icon } from '../utils/icons.js';
-import { clearMissingJobRoute, handleAppRoute } from '../controllers/route-controller.js';
+import { appStore } from '../state/app-store.js';
+import { deriveLayout, selectActiveItem, selectDefaultProviderId, selectDefaultUpsamplerId } from '../state/selectors.js';
+import { connectWs } from '../state/ws-client.js';
+import { loadSession, saveSession, scheduleSessionSave, getTabUuid } from '../state/session.js';
+import { parseRoute, selectionToHash, routeToState } from '../utils/router.js';
 import {
-  applyHistoryItemToForm,
   aspectRatioFromProviderParams,
-  captureLastGeneratorSettings,
-  getDefaultProviderId,
-  getSessionFormState,
   looksLikeJsonPrompt,
   promptWithAspectRatio,
   providerParamsFromHistory,
-  resetGeneratorForm,
-  withProviderDefaults
+  withProviderDefaults,
 } from '../controllers/generator-state.js';
 import {
   editorGenerate as editorGenerateAction,
   editorRedo as editorRedoAction,
   editorUndo as editorUndoAction,
   ensureEditableEditorJob as ensureEditableEditorJobAction,
-  promptToDraftJson as promptToDraftJsonValue,
-  rememberEditorSnapshot as rememberEditorSnapshotAction,
   sendEditorChat as sendEditorChatAction,
-  updateEditorPrompt as updateEditorPromptAction
+  updateEditorPrompt as updateEditorPromptAction,
 } from '../controllers/editor-actions.js';
 import './control-panel.js';
 import './display-panel.js';
@@ -32,98 +28,41 @@ import './editor-sidebar.js';
 
 export class AppRoot extends LitElement {
   static properties = {
-    // API & Status
     apiOnline: { type: Boolean },
     templates: { type: Array },
-    endpoints: { type: Array },
-    selectedEndpoint: { type: String },
     providerSchemas: { type: Object },
     providerParams: { type: Object },
     chatProviders: { type: Array },
     selectedChatProvider: { type: String },
     selectedUpsampler: { type: String },
-
-    // Queue / Jobs
     jobQueue: { type: Array },
     selectedJobId: { type: String },
     isRefining: { type: Boolean },
-
-    // Tabs
     activeTab: { type: String },
     activeLeftTab: { type: String },
-
-    // Local DB / History
     historyItems: { type: Array },
     cachedUpsampledPrompt: { type: String },
-
-    // Lightbox
     lightboxSrc: { type: String },
     lightboxPrompt: { type: String },
     lightboxSeedLabel: { type: String },
     lightboxItem: { type: Object },
     lightboxHidden: { type: Boolean },
     lightboxPreviews: { type: Array },
-
-    // Active form values synced to control-panel
     prompt: { type: String },
     magicPrompt: { type: Boolean },
     bypassUpsample: { type: Boolean },
     selectedTemplate: { type: String },
     advancedMode: { type: Boolean },
-    // Editor: shared selection state between canvas and sidebar
+    selectedEndpoint: { type: String },
+    isJsonMode: { type: Boolean },
     editorSelectedIndex: { type: Number },
     editorPinnedIndex: { type: Number },
-
-    // Router & toasts
-    currentRoute: { type: String },
     toasts: { type: Array },
-    parentUuid: { type: String },
-    isJsonMode: { type: Boolean },
-    inspectorItem: { type: Object },
-    lightboxIndex: { type: Number },
-    theme: { type: String }
+    theme: { type: String },
   };
 
   createRenderRoot() {
     return this;
-  }
-
-  connectedCallback() {
-    super.connectedCallback();
-    this._unsubscribeQueue = queueStore.subscribe(() => {
-      const previousStatuses = this._lastJobStatuses;
-      this.jobQueue = queueStore.jobQueue;
-      this.selectedJobId = queueStore.selectedJobId;
-      this.apiOnline = queueStore.connected;
-      for (const job of this.jobQueue) {
-        const previous = previousStatuses.get(job.id);
-        if (job.status === 'completed' && previous !== 'completed') {
-          this.loadHistory();
-        }
-        if (job.id === this.selectedJobId && job.status === 'editing' && previous !== 'editing') {
-          if (window.location.hash !== `#/editor/${job.id}`) {
-            window.location.hash = `#/editor/${job.id}`;
-          }
-        }
-        previousStatuses.set(job.id, job.status);
-
-        // If lightbox is open and showing this active job, update its previews in real-time
-        if (!this.lightboxHidden && this.lightboxItem && this.lightboxItem.id === job.id) {
-          this.lightboxItem = job;
-          if (job.genPreviews && job.genPreviews[this.lightboxIndex] !== undefined) {
-            this.lightboxPreviews = [job.genPreviews[this.lightboxIndex]];
-          }
-        }
-      }
-      this.requestUpdate();
-    });
-  }
-
-  disconnectedCallback() {
-    super.disconnectedCallback();
-    if (this._unsubscribeQueue) {
-      this._unsubscribeQueue();
-    }
   }
 
   constructor() {
@@ -132,110 +71,151 @@ export class AppRoot extends LitElement {
     this.theme = localStorage.getItem('ideoui_theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
     document.body.classList.remove('light-theme', 'dark-theme');
     document.body.classList.add(`${this.theme}-theme`);
-    this.templates = ['v1'];
-
-    this.jobQueue = queueStore.jobQueue;
-    this.selectedJobId = queueStore.selectedJobId;
+    this.templates = [];
+    this.providerSchemas = {};
+    this.providerParams = {};
+    this.chatProviders = [];
+    this.selectedChatProvider = '';
+    this.selectedUpsampler = '';
+    this.jobQueue = [];
+    this.selectedJobId = '';
     this.isRefining = false;
-
     this.activeTab = 'current';
     this.activeLeftTab = 'generator';
     this.historyItems = [];
     this.cachedUpsampledPrompt = '';
-
-    // Lightbox defaults
     this.lightboxSrc = '';
     this.lightboxPrompt = '';
     this.lightboxSeedLabel = '';
     this.lightboxItem = null;
     this.lightboxHidden = true;
     this.lightboxPreviews = [];
-    this._previewsCache = new Map();
-
-    // Form defaults
     this.prompt = '';
     this.magicPrompt = true;
     this.bypassUpsample = false;
     this.selectedTemplate = 'v1';
     this.advancedMode = false;
-    this.endpoints = [];
     this.selectedEndpoint = '';
-    this.providerSchemas = {};
-    this.providerParams = {};
-    this.chatProviders = [];
-    this.selectedChatProvider = '';
-    this.selectedUpsampler = '';
-    this.tabUuid = '';
-    this._sessionSaveTimer = null;
-
-    // Shared editor state
+    this.isJsonMode = false;
     this.editorSelectedIndex = null;
     this.editorPinnedIndex = null;
-
-    // Router & toasts defaults
-    this.currentRoute = '#/';
     this.toasts = [];
-    this.parentUuid = '';
-    this.isJsonMode = false;
     this.inspectorItem = null;
-    this.lightboxIndex = null;
-    this.editorUndoStacks = new Map();
-    this.editorRedoStacks = new Map();
-    this._pendingJobPatches = new Map();
-    this._jobPatchTimers = new Map();
-    this._lastJobStatuses = new Map();
-    this._preserveNextHomeRoute = false;
-    this.lastGeneratorSettings = null;
+    this._previewsCache = new Map();
+    this._projectingHash = false;
+    this._lastStatuses = new Map();
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this._unsubscribe = appStore.subscribe(() => this.onStoreChange());
+  }
+
+  disconnectedCallback() {
+    super.disconnectedCallback();
+    if (this._unsubscribe) this._unsubscribe();
   }
 
   async firstUpdated() {
-    // Listen to hash change routing
     window.addEventListener('hashchange', () => {
-      this.handleRoute();
-      this.scheduleSessionSave();
+      if (this._projectingHash) return;
+      this.handleRouteFromHash();
+      scheduleSessionSave();
     });
-    this.tabUuid = sessionStorage.getItem('ideoui_tab_uuid') || (crypto.randomUUID ? crypto.randomUUID() : `tab_${Date.now()}_${Math.random().toString(36).slice(2)}`);
-    sessionStorage.setItem('ideoui_tab_uuid', this.tabUuid);
-    
+    appStore.dispatch({ type: 'SET_SESSION', partial: { tabUuid: getTabUuid() } });
     try {
       await initHistoryApi();
       await this.loadHistory();
-      await this.loadTemplates();
-      await this.loadProviderSchemas();
-      await this.loadChatProviders();
-      await this.loadEndpoints();
-      await queueStore.loadActiveJobs();
-      queueStore.connect();
-      await this.restoreSessionState();
+      await appStore.loadProviders();
+      this.syncProviders();
+      await appStore.loadActiveJobs();
+      connectWs();
+      await loadSession();
+      this.syncFromStore();
+      this.applyRestoredRoute();
     } catch (e) {
-      console.error("Initialization failed", e);
-      this.loadTemplates();
+      console.error('Initialization failed', e);
     }
-    this.handleRoute({ preserveHome: true });
+    this.handleRouteFromHash();
   }
 
-  getDefaultProviderId() {
-    return getDefaultProviderId(this);
+  // ---- Store -> reactive props ------------------------------------------
+
+  onStoreChange() {
+    const state = appStore.getState();
+    const prev = this._lastStatuses;
+    // Status transitions: completed -> refresh history; editing -> route.
+    for (const job of state.items) {
+      const previous = prev.get(job.id);
+      if (job.status === 'completed' && previous !== 'completed') this.loadHistory();
+      if (job.id === state.selection.activeItemId && job.status === 'editing' && previous !== 'editing') {
+        this.projectRouteSoon(`#/editor/${job.id}`);
+      }
+      prev.set(job.id, job.status);
+      if (!this.lightboxHidden && this.lightboxItem && this.lightboxItem.id === job.id) {
+        this.lightboxItem = job;
+        if (job.genPreviews && this.lightboxIndex !== null && job.genPreviews[this.lightboxIndex] !== undefined) {
+          this.lightboxPreviews = [job.genPreviews[this.lightboxIndex]];
+        }
+      }
+    }
+    this.syncFromStore();
+    this.projectRoute();
+    this.requestUpdate();
   }
 
-  resetGeneratorForm() {
-    resetGeneratorForm(this);
+  syncProviders() {
+    const state = appStore.getState();
+    this.templates = state.providers.templates;
+    this.providerSchemas = state.providers.schemas;
+    this.chatProviders = state.providers.chatProviders;
+    if (this.chatProviders.length && !this.selectedChatProvider) this.selectedChatProvider = this.chatProviders[0].id;
   }
 
-  goCleanHome() {
-    this._preserveNextHomeRoute = false;
-    queueStore.setSelectedJobId('');
-    this.activeLeftTab = 'generator';
-    this.resetGeneratorForm();
-    if (window.location.hash !== '#/') {
-      window.location.hash = '#/';
-    } else {
-      this.handleRoute({ preserveHome: true });
+  syncFromStore() {
+    const state = appStore.getState();
+    this.apiOnline = state.ui.apiOnline;
+    this.isRefining = state.ui.isRefining;
+    this.jobQueue = state.items;
+    this.selectedJobId = state.selection.activeItemId;
+    this.toasts = state.toasts;
+    this.editorSelectedIndex = state.editor.selectedIndex;
+    this.editorPinnedIndex = state.editor.pinnedIndex;
+
+    const g = state.generator;
+    this.prompt = g.prompt;
+    this.magicPrompt = g.magicPrompt;
+    this.bypassUpsample = g.bypassUpsample;
+    this.isJsonMode = g.isJsonMode;
+    this.selectedTemplate = g.selectedTemplate;
+    this.selectedUpsampler = g.selectedUpsampler;
+    this.selectedEndpoint = g.selectedEndpoint;
+    this.providerParams = g.providerParams;
+    this.advancedMode = g.advancedMode;
+    this.cachedUpsampledPrompt = g.cachedUpsampledPrompt;
+
+    // Inspector item from history.
+    this.inspectorItem = state.selection.inspectorHistoryUuid
+      ? (state.history || []).find((h) => h.uuid === state.selection.inspectorHistoryUuid) || null
+      : null;
+
+    // Layout is a pure projection of state (replaces _preserveNextHomeRoute).
+    const layout = deriveLayout(state);
+    this.activeLeftTab = layout.leftTab;
+    this.activeTab = state.view;
+
+    // Lightbox slice.
+    const lb = state.lightbox;
+    if (lb.hidden) {
+      if (!this.lightboxHidden) {
+        this.lightboxHidden = true;
+        this.lightboxPreviews = [];
+      }
     }
   }
 
   getHistoryItem(uuid) {
-    return (this.historyItems || []).find(item => item.uuid === uuid) || null;
+    return (this.historyItems || []).find((item) => item.uuid === uuid) || null;
   }
 
   itemAspect(item) {
@@ -246,67 +226,140 @@ export class AppRoot extends LitElement {
     return w && h ? `${w} / ${h}` : '1 / 1';
   }
 
+  // ---- Routing ----------------------------------------------------------
+
+  projectRouteSoon(hash) {
+    if ((window.location.hash || '#/') !== hash) {
+      this._projectingHash = true;
+      window.location.hash = hash;
+      setTimeout(() => { this._projectingHash = false; }, 0);
+    }
+  }
+
+  projectRoute() {
+    const hash = selectionToHash(appStore.getState());
+    if ((window.location.hash || '#/') !== hash) {
+      this._projectingHash = true;
+      window.location.hash = hash;
+      setTimeout(() => { this._projectingHash = false; }, 0);
+    }
+  }
+
+  applyRestoredRoute() {
+    // Prefer the route restored from session if it points at a live item.
+    if (window.location.hash) return;
+    // handled by projection on next change; nothing else needed.
+  }
+
+  handleRouteFromHash() {
+    const hash = window.location.hash || '#/';
+    const route = parseRoute(hash);
+    const deltas = routeToState(route, appStore.getState());
+    if (!deltas) {
+      window.location.hash = '#/';
+      return;
+    }
+    if (deltas.view) appStore.dispatch({ type: 'SET_VIEW', view: deltas.view });
+    if (deltas.userLeftTab !== undefined) appStore.dispatch({ type: 'SET_PANEL', leftTab: deltas.userLeftTab });
+    if (deltas.closeLightbox) appStore.dispatch({ type: 'CLOSE_LIGHTBOX' });
+    if (deltas.inspectorHistoryUuid !== undefined) appStore.dispatch({ type: 'SET_INSPECTOR', uuid: deltas.inspectorHistoryUuid });
+
+    if (deltas.activeItemId !== undefined) {
+      const target = deltas.activeItemId;
+      const current = appStore.getState().selection.activeItemId;
+      const exists = appStore.getState().items.some((it) => it.id === target);
+      // Idempotent: skip re-selecting the already-active item (avoids resetting
+      // panel overrides on a projected hash echo). Still open lightbox if asked.
+      if (target === current) {
+        if (deltas.lightboxIndex !== null && deltas.lightboxIndex !== undefined) {
+          const job = selectActiveItem(appStore.getState());
+          if (job) this.openLightboxFor(job, deltas.lightboxIndex);
+        }
+      } else if (exists) {
+        appStore.dispatch({ type: 'SET_ACTIVE_ITEM', id: target });
+        const job = selectActiveItem(appStore.getState());
+        if (job) this.updateFormInputs(job);
+        if (deltas.lightboxIndex !== null && deltas.lightboxIndex !== undefined) {
+          this.openLightboxFor(job, deltas.lightboxIndex);
+        }
+      } else {
+        appStore.fetchItem(target).then((found) => {
+          if (found) {
+            appStore.dispatch({ type: 'SET_ACTIVE_ITEM', id: target });
+            this.updateFormInputs(found);
+            if (deltas.lightboxIndex !== null && deltas.lightboxIndex !== undefined) this.openLightboxFor(found, deltas.lightboxIndex);
+          } else {
+            this.clearMissingJobRoute(target);
+          }
+        });
+      }
+    } else if (deltas.lightboxFromHistoryUuid) {
+      const item = this.getHistoryItem(deltas.lightboxFromHistoryUuid);
+      if (item) this.openLightboxFor(item, deltas.lightboxIndex);
+      else this.loadHistory().then(() => this.openLightboxFor(this.getHistoryItem(deltas.lightboxFromHistoryUuid), deltas.lightboxIndex));
+    } else if (deltas.editorStartUuid) {
+      const item = this.getHistoryItem(deltas.editorStartUuid);
+      this.inspectorItem = item;
+      appStore.dispatch({ type: 'SET_ACTIVE_ITEM', id: '' });
+      if (!item) this.loadHistory().then(() => { this.inspectorItem = this.getHistoryItem(deltas.editorStartUuid); this.requestUpdate(); });
+    }
+    this.syncFromStore();
+    this.requestUpdate();
+  }
+
+  clearMissingJobRoute(jobId) {
+    appStore.dispatch({ type: 'REMOVE_ITEM', id: jobId });
+    appStore.dispatch({ type: 'CLOSE_LIGHTBOX' });
+    appStore.dispatch({ type: 'SET_VIEW', view: 'current' });
+    appStore.dispatch({ type: 'SET_PANEL', leftTab: 'generator' });
+    appStore.dispatch({ type: 'SET_ACTIVE_ITEM', id: '' });
+    this.resetGeneratorForm();
+    scheduleSessionSave();
+  }
+
+  // ---- Lightbox ---------------------------------------------------------
+
   async loadLightboxPreviews(item, index) {
     this.lightboxPreviews = [];
     if (!item) return;
-
     const previewsUrl = item.previewsUrl || item.previews_url;
     if (previewsUrl) {
       const itemId = item.uuid || item.id;
-
-      if (!this._previewsCache) {
-        this._previewsCache = new Map();
-      }
+      if (!this._previewsCache) this._previewsCache = new Map();
       const itemCache = this._previewsCache.get(itemId);
       if (itemCache && itemCache[index]) {
         this.lightboxPreviews = itemCache[index];
         this.requestUpdate();
         return;
       }
-
       try {
         const response = await fetch(`/api/history/${encodeURIComponent(itemId)}/previews.zip`);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch previews ZIP: ${response.statusText}`);
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-        const uint8 = new Uint8Array(arrayBuffer);
-
+        if (!response.ok) throw new Error(`Failed to fetch previews ZIP: ${response.statusText}`);
         const { unzipSync } = await import('fflate');
-        const unzipped = unzipSync(uint8);
-
+        const unzipped = unzipSync(new Uint8Array(await response.arrayBuffer()));
         const sortedNames = Object.keys(unzipped).sort();
-        const files = sortedNames.map(name => unzipped[name]);
-
+        const files = sortedNames.map((name) => unzipped[name]);
         const numImages = item.images ? item.images.length : 1;
-
         const newItemCache = {};
         for (let imgIdx = 0; imgIdx < numImages; imgIdx++) {
           const idxPreviews = [];
           for (let idx = 0; idx < files.length; idx++) {
-            if (idx % numImages === imgIdx) {
-              const blob = new Blob([files[idx]], { type: 'image/jpeg' });
-              idxPreviews.push(URL.createObjectURL(blob));
-            }
+            if (idx % numImages === imgIdx) idxPreviews.push(URL.createObjectURL(new Blob([files[idx]], { type: 'image/jpeg' })));
           }
           newItemCache[imgIdx] = idxPreviews;
         }
-
         this._previewsCache.set(itemId, newItemCache);
         this.lightboxPreviews = newItemCache[index] || [];
         this.requestUpdate();
       } catch (e) {
-        console.warn("Failed to load/unzip previews client-side:", e);
+        console.warn('Failed to load/unzip previews client-side:', e);
       }
-    } else if (item.genPreviews) {
-      if (item.genPreviews[index] !== undefined) {
-        this.lightboxPreviews = [item.genPreviews[index]];
-      }
+    } else if (item.genPreviews && item.genPreviews[index] !== undefined) {
+      this.lightboxPreviews = [item.genPreviews[index]];
     }
   }
 
-  openRouteLightbox(item, index) {
+  openLightboxFor(item, index) {
     if (!item || !item.images?.[index]) return;
     this.lightboxSrc = item.images[index];
     this.lightboxPrompt = item.rawPrompt || '';
@@ -315,119 +368,24 @@ export class AppRoot extends LitElement {
     this.lightboxItem = item;
     this.lightboxIndex = index;
     this.lightboxHidden = false;
-
+    appStore.dispatch({ type: 'SET_LIGHTBOX', partial: { hidden: false, itemId: item.uuid || item.id, index } });
     const previewsUrl = item.previewsUrl || item.previews_url;
     const isCached = this._previewsCache && this._previewsCache.has(item.uuid || item.id);
-    if (!previewsUrl || isCached) {
-      this.loadLightboxPreviews(item, index);
-    } else {
-      this.lightboxPreviews = [];
-    }
+    if (!previewsUrl || isCached) this.loadLightboxPreviews(item, index);
+    else this.lightboxPreviews = [];
   }
 
-  closeRouteLightbox() {
+  closeLightbox() {
+    appStore.dispatch({ type: 'CLOSE_LIGHTBOX' });
     this.lightboxHidden = true;
     this.lightboxIndex = null;
     this.lightboxPreviews = [];
   }
 
-  clearMissingJobRoute(jobId) {
-    clearMissingJobRoute(this, jobId);
-  }
-
-  handleRoute(options = {}) {
-    handleAppRoute(this, options);
-  }
-
-  showToast(message, type = 'info') {
-    const toast = { id: Date.now() + '_' + Math.random().toString(36).substr(2, 9), message, type };
-    this.toasts = [...this.toasts, toast];
-    setTimeout(() => {
-      this.toasts = this.toasts.filter(t => t.id !== toast.id);
-    }, 4000);
-  }
-
-  async loadTemplates() {
-    try {
-      const resp = await fetch("/api/upsample_templates");
-      if (resp.ok) {
-        this.templates = await resp.json();
-        if (this.templates.length > 0) {
-          const first = this.templates[0];
-          this.selectedTemplate = typeof first === 'object' ? first.id : first;
-        }
-        this.apiOnline = true;
-      } else {
-        throw new Error();
-      }
-    } catch (e) {
-      console.warn("Backend API templates fetch failed");
-      this.apiOnline = false;
-      this.templates = ['v1', 'v2'];
-    }
-  }
-
-  async loadHistory() {
-    try {
-      const items = await getAllHistory();
-      items.sort((a, b) => b.timestamp - a.timestamp);
-      this.historyItems = items;
-    } catch (e) {
-      console.error("Failed to load history from backend", e);
-    }
-  }
-
-  async loadEndpoints() {
-    try {
-      const resp = await fetch("/api/endpoints");
-      if (resp.ok) {
-        this.endpoints = await resp.json();
-        const defaultEp = this.endpoints.find(ep => ep.default);
-        if (defaultEp) {
-          this.selectedEndpoint = defaultEp.name;
-        } else if (this.endpoints.length > 0) {
-          this.selectedEndpoint = this.endpoints[0].name;
-        }
-        this.providerParams = this.withProviderDefaults(this.selectedEndpoint, this.providerParams);
-      }
-    } catch (e) {
-      console.error("Failed to load endpoints:", e);
-    }
-  }
-
-  async loadProviderSchemas() {
-    const resp = await fetch("/api/providers/schemas");
-    if (!resp.ok) throw new Error("Failed to load provider schemas");
-    this.providerSchemas = await resp.json();
-    const defaultEntry = Object.entries(this.providerSchemas).find(([, schema]) => schema.type === 'generation' && schema.default);
-    const firstGeneration = Object.entries(this.providerSchemas).find(([, schema]) => schema.type === 'generation');
-    if (!this.selectedEndpoint) {
-      this.selectedEndpoint = defaultEntry?.[0] || firstGeneration?.[0] || '';
-    }
-    const defaultUpsampler = Object.entries(this.providerSchemas).find(([, schema]) => schema.type === 'upsampler' && schema.default);
-    const firstUpsampler = Object.entries(this.providerSchemas).find(([, schema]) => schema.type === 'upsampler');
-    if (!this.selectedUpsampler) {
-      this.selectedUpsampler = defaultUpsampler?.[0] || firstUpsampler?.[0] || '';
-    }
-    this.providerParams = this.withProviderDefaults(this.selectedEndpoint, this.providerParams);
-  }
-
-  async loadChatProviders() {
-    try {
-      const resp = await fetch("/api/providers/chat");
-      if (resp.ok) {
-        this.chatProviders = await resp.json();
-        if (this.chatProviders.length > 0) {
-          this.selectedChatProvider = this.chatProviders[0].id;
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load chat providers:", e);
-    }
-  }
+  // ---- Generator form ---------------------------------------------------
 
   withProviderDefaults(providerId, params = {}) {
-    return withProviderDefaults(this, providerId, params);
+    return withProviderDefaults({ providerSchemas: this.providerSchemas }, providerId, params);
   }
 
   providerParamsFromHistory(item) {
@@ -447,145 +405,97 @@ export class AppRoot extends LitElement {
   }
 
   applyHistoryItemToForm(item, preferJson = false) {
-    applyHistoryItemToForm(this, item, preferJson);
+    appStore.dispatch({ type: 'APPLY_HISTORY_TO_GENERATOR', item });
+    this.syncFromStore();
   }
 
-  async restoreSessionState() {
-    const resp = await fetch(`/api/session/state?tab_uuid=${encodeURIComponent(this.tabUuid)}`);
-    let state = resp.ok ? await resp.json() : null;
-    if (!state) {
-      const latestResp = await fetch("/api/session/state");
-      state = latestResp.ok ? await latestResp.json() : null;
-    }
-    if (!state) return;
-    const form = state.form_state || state.formState || {};
-    this.prompt = form.prompt ?? this.prompt;
-    this.magicPrompt = form.magicPrompt ?? form.magic_prompt ?? this.magicPrompt;
-    this.advancedMode = form.advancedMode ?? form.advanced_mode ?? this.advancedMode;
-    this.isJsonMode = form.isJsonMode ?? form.is_json_mode ?? this.isJsonMode;
-    this.selectedTemplate = form.selectedTemplate ?? form.template ?? this.selectedTemplate;
-    this.selectedEndpoint = form.provider ?? form.endpoint ?? this.selectedEndpoint;
-    this.providerParams = this.withProviderDefaults(this.selectedEndpoint, form.providerParams || form.provider_params || this.providerParams);
-    this.captureLastGeneratorSettings();
-    const activeJobId = state.active_job_id || state.activeJobId;
-    const hasActiveJob = activeJobId && queueStore.jobQueue.some(job => job.id === activeJobId);
-    if (hasActiveJob) queueStore.setSelectedJobId(activeJobId);
-    if (state.route && window.location.hash === '') {
-      const routeJob = state.route.match(/^#\/(?:job|editor)\/([^/]+)/)?.[1];
-      if (!routeJob || queueStore.jobQueue.some(job => job.id === routeJob)) {
-        window.location.hash = state.route;
-      }
-    }
+  resetGeneratorForm() {
+    appStore.dispatch({ type: 'RESET_GENERATOR' });
+    this.syncFromStore();
   }
 
-  getSessionFormState() {
-    return getSessionFormState(this);
+  updateFormInputs(job) {
+    if (!job) return;
+    const isJsonMode = job.params?.isJsonMode || false;
+    const prompt = isJsonMode ? (job.upsampledPrompt || job.rawPrompt) : job.rawPrompt;
+    const endpoint = job.provider || job.params?.endpoint || this.selectedEndpoint;
+    const providerParams = this.withProviderDefaults(endpoint, job.providerParams || job.params?.providerParams || {});
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELDS', fields: {
+      isJsonMode,
+      prompt,
+      magicPrompt: job.params?.magicPrompt,
+      advancedMode: job.params?.advancedMode || false,
+      selectedTemplate: job.params?.upsampleTemplate || 'v1',
+      selectedEndpoint: endpoint,
+      providerParams,
+      cachedUpsampledPrompt: job.upsampledPrompt || '',
+      bypassUpsample: Boolean(job.upsampledPrompt),
+    } });
+    this.syncFromStore();
   }
 
-  captureLastGeneratorSettings() {
-    captureLastGeneratorSettings(this);
-  }
+  // ---- Data loading -----------------------------------------------------
 
-  scheduleSessionSave() {
-    clearTimeout(this._sessionSaveTimer);
-    this._sessionSaveTimer = setTimeout(() => this.saveSessionState(), 500);
-  }
-
-  async saveSessionState() {
-    if (!this.tabUuid) return;
+  async loadHistory() {
     try {
-      const selectedJob = this.jobQueue.find(job => job.id === this.selectedJobId);
-      await fetch("/api/session/state", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tab_uuid: this.tabUuid,
-          active_job_id: this.selectedJobId || null,
-          route: window.location.hash || '#/',
-          form_state: this.getSessionFormState(),
-          draft_json: selectedJob?.draftJson || null
-        })
-      });
-    } catch (error) {
-      console.warn("Session autosave failed:", error);
+      const items = await getAllHistory();
+      items.sort((a, b) => b.timestamp - a.timestamp);
+      appStore.dispatch({ type: 'SET_HISTORY', items });
+      this.historyItems = items;
+    } catch (e) {
+      console.error('Failed to load history from backend', e);
     }
   }
 
-  rememberEditorSnapshot(jobId, promptText) {
-    rememberEditorSnapshotAction(this, jobId, promptText);
+  // ---- Toasts -----------------------------------------------------------
+
+  showToast(message, type = 'info') {
+    appStore.showToast(message, type);
   }
 
-  async ensureEditableEditorJob(nextPrompt = null) {
-    return ensureEditableEditorJobAction(this, nextPrompt);
-  }
+  // ---- Event handlers ---------------------------------------------------
 
-  async patchServerJob(jobId, payload) {
-    try {
-      await fetch(`/api/jobs/${encodeURIComponent(jobId)}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-    } catch (error) {
-      console.warn("Job patch failed:", error);
-    }
-  }
-
-  hasPendingJobPatch(jobId) {
-    return this._pendingJobPatches.has(jobId);
-  }
-
-  scheduleJobPatch(jobId, payload, delayMs = 700) {
-    if (!jobId || !payload) return;
-    const pending = {
-      ...(this._pendingJobPatches.get(jobId) || {}),
-      ...payload
-    };
-    this._pendingJobPatches.set(jobId, pending);
-    clearTimeout(this._jobPatchTimers.get(jobId));
-    this._jobPatchTimers.set(jobId, setTimeout(async () => {
-      const nextPayload = this._pendingJobPatches.get(jobId);
-      this._pendingJobPatches.delete(jobId);
-      this._jobPatchTimers.delete(jobId);
-      if (nextPayload) {
-        await this.patchServerJob(jobId, nextPayload);
-      }
-    }, delayMs));
+  goCleanHome() {
+    appStore.dispatch({ type: 'SET_VIEW', view: 'current' });
+    appStore.dispatch({ type: 'SET_ACTIVE_ITEM', id: '' });
+    appStore.dispatch({ type: 'SET_PANEL', leftTab: 'generator' });
+    this.resetGeneratorForm();
+    scheduleSessionSave();
   }
 
   async onGenerate(e) {
     const params = e.detail;
-    this.prompt = params.prompt;
-    this.magicPrompt = params.magicPrompt;
-    this.bypassUpsample = params.bypassUpsample;
-    this.selectedTemplate = params.selectedTemplate;
-    this.advancedMode = params.advancedMode;
-    this.selectedEndpoint = params.endpoint;
-    this.providerParams = { ...(params.providerParams || this.providerParams) };
-    this.captureLastGeneratorSettings();
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELDS', fields: {
+      prompt: params.prompt,
+      magicPrompt: params.magicPrompt,
+      bypassUpsample: params.bypassUpsample,
+      selectedTemplate: params.selectedTemplate,
+      advancedMode: params.advancedMode,
+      selectedEndpoint: params.endpoint,
+      providerParams: { ...(params.providerParams || this.providerParams) },
+    } });
     try {
-      const result = await queueStore.sendJobRequest({
+      const g = appStore.getState().generator;
+      const result = await appStore.createItem({
         raw_prompt: params.prompt,
         provider: params.endpoint,
-        upsampler: params.upsampler || this.selectedUpsampler || 'deepseek',
-        parent_uuid: this.parentUuid || null,
+        upsampler: params.upsampler || g.selectedUpsampler || selectDefaultUpsamplerId(appStore.getState()) || null,
+        parent_uuid: g.parentUuid || null,
         magic_prompt: Boolean(params.magicPrompt && !params.bypassUpsample),
         advanced_mode: Boolean(params.advancedMode),
         is_json_mode: Boolean(params.isJsonMode),
-        provider_params: this.providerParams,
+        provider_params: g.providerParams,
         upsampler_params: { template: params.selectedTemplate || 'v1' },
-        upsampled_prompt: params.bypassUpsample ? this.cachedUpsampledPrompt : null
+        upsampled_prompt: params.bypassUpsample ? g.cachedUpsampledPrompt : null,
       });
-      this.parentUuid = '';
+      appStore.dispatch({ type: 'SET_GENERATOR_FIELD', field: 'parentUuid', value: '' });
       const isEditing = result.job?.status === 'editing';
       if (isEditing) {
-        this.activeLeftTab = 'generator';
-        window.location.hash = '#/editor/' + result.job_id;
+        appStore.dispatch({ type: 'SET_PANEL', leftTab: 'generator' });
       } else {
-        this.activeLeftTab = 'progress';
-        window.location.hash = '#/job/' + result.job_id;
+        appStore.dispatch({ type: 'SET_PANEL', leftTab: 'progress' });
       }
-      this.scheduleSessionSave();
+      scheduleSessionSave();
     } catch (error) {
       this.showToast(error.message, 'error');
     }
@@ -593,27 +503,18 @@ export class AppRoot extends LitElement {
 
   onSelectJob(e) {
     const job = e.detail;
-    queueStore.setSelectedJobId(job.id);
-    this.activeLeftTab = 'progress';
-    this.editorPinnedIndex = null;
-    window.location.hash = '#/job/' + job.id;
+    appStore.dispatch({ type: 'SET_ACTIVE_ITEM', id: job.id });
+    appStore.dispatch({ type: 'SET_PANEL', leftTab: 'progress' });
+    appStore.dispatch({ type: 'SET_EDITOR', pinnedIndex: null });
   }
 
   onCancelJob(e) {
-    const jobId = e.detail;
-    this.removeJob(jobId);
+    this.removeJob(e.detail);
   }
 
   async removeJob(jobId) {
     try {
-      await queueStore.removeJob(jobId);
-      if (this.selectedJobId === jobId) {
-        if (queueStore.selectedJobId) {
-          window.location.hash = '#/job/' + queueStore.selectedJobId;
-        } else {
-          window.location.hash = '#/';
-        }
-      }
+      await appStore.removeItem(jobId);
     } catch (error) {
       this.showToast(error.message, 'error');
     }
@@ -621,150 +522,120 @@ export class AppRoot extends LitElement {
 
   async onClearCompletedJobs() {
     try {
-      await queueStore.clearCompleted();
-      if (this.selectedJobId && !queueStore.jobQueue.find(j => j.id === this.selectedJobId)) {
-        if (queueStore.selectedJobId) {
-          window.location.hash = '#/job/' + queueStore.selectedJobId;
-        } else {
-          window.location.hash = '#/';
-        }
-      }
+      await appStore.clearCompleted();
     } catch (error) {
       this.showToast(error.message, 'error');
     }
   }
 
-  updateFormInputs(job) {
-    this.isJsonMode = job.params.isJsonMode || false;
-    this.prompt = this.isJsonMode ? (job.upsampledPrompt || job.rawPrompt) : job.rawPrompt;
-    this.magicPrompt = job.params.magicPrompt;
-    this.advancedMode = job.params.advancedMode || false;
-    this.selectedTemplate = job.params.upsampleTemplate || 'v1';
-    this.selectedEndpoint = job.provider || job.params.endpoint || (this.endpoints.find(ep => ep.default)?.name || '');
-    this.providerParams = this.withProviderDefaults(this.selectedEndpoint, job.providerParams || job.params.providerParams || {});
- 
-    if (job.upsampledPrompt) {
-      this.cachedUpsampledPrompt = job.upsampledPrompt;
-      this.bypassUpsample = true;
-    } else {
-      this.cachedUpsampledPrompt = '';
-      this.bypassUpsample = false;
-    }
+  onPromptChange(e) {
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELDS', fields: { prompt: e.detail, cachedUpsampledPrompt: '', bypassUpsample: false } });
+    scheduleSessionSave();
   }
 
-  onPromptChange(e) {
-    this.prompt = e.detail;
-    this.cachedUpsampledPrompt = '';
-    this.bypassUpsample = false;
-    this.scheduleSessionSave();
-  }
- 
   onMagicChange(e) {
-    this.magicPrompt = e.detail;
-    this.captureLastGeneratorSettings();
-    this.scheduleSessionSave();
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELD', field: 'magicPrompt', value: e.detail });
+    scheduleSessionSave();
   }
- 
+
   onBypassChange(e) {
-    this.bypassUpsample = e.detail;
-    this.scheduleSessionSave();
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELD', field: 'bypassUpsample', value: e.detail });
+    scheduleSessionSave();
   }
 
   onTemplateChange(e) {
-    this.selectedTemplate = e.detail;
-    this.captureLastGeneratorSettings();
-    this.scheduleSessionSave();
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELD', field: 'selectedTemplate', value: e.detail });
+    scheduleSessionSave();
   }
 
   onAdvancedChange(e) {
-    this.advancedMode = e.detail;
-    this.captureLastGeneratorSettings();
-    this.scheduleSessionSave();
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELD', field: 'advancedMode', value: e.detail });
+    scheduleSessionSave();
+  }
+
+  onUpsamplerChange(e) {
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELD', field: 'selectedUpsampler', value: e.detail });
+    scheduleSessionSave();
+  }
+
+  onIsJsonChange(e) {
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELD', field: 'isJsonMode', value: e.detail });
+    scheduleSessionSave();
   }
 
   onEndpointChange(e) {
-    this.selectedEndpoint = e.detail;
-    this.providerParams = this.withProviderDefaults(this.selectedEndpoint, {});
-    this.captureLastGeneratorSettings();
-    this.scheduleSessionSave();
+    const providerId = e.detail;
+    const providerParams = this.withProviderDefaults(providerId, {});
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELDS', fields: { selectedEndpoint: providerId, providerParams } });
+    scheduleSessionSave();
   }
 
   onProviderParamsChange(e) {
     const previousAspect = this.aspectRatioFromProviderParams(this.providerParams);
-    this.providerParams = { ...e.detail };
-    const nextAspect = this.aspectRatioFromProviderParams(this.providerParams);
-    const job = queueStore.getSelectedJob();
+    const providerParams = { ...e.detail };
+    const nextAspect = this.aspectRatioFromProviderParams(providerParams);
+    appStore.dispatch({ type: 'SET_GENERATOR_FIELD', field: 'providerParams', value: providerParams });
+    const job = selectActiveItem(appStore.getState());
     if (job?.status === 'editing') {
-      const updates = { providerParams: this.providerParams };
+      const updates = { providerParams };
       if (nextAspect !== previousAspect) {
         updates.upsampledPrompt = this.promptWithAspectRatio(job.upsampledPrompt, nextAspect);
-        updates.draftJson = this.promptToDraftJson(updates.upsampledPrompt);
+        updates.draftJson = JSON.parse(updates.upsampledPrompt);
       }
-      queueStore.updateJob(job.id, updates);
-      this.patchServerJob(job.id, updates);
+      appStore.updateItem(job.id, updates);
     }
-    this.captureLastGeneratorSettings();
-    this.scheduleSessionSave();
+    scheduleSessionSave();
   }
 
   async onSwitchTab(e) {
     const tab = e.detail;
-    if (tab === 'history') {
-      window.location.hash = '#/history';
-    } else {
-      if (this.selectedJobId) {
-        window.location.hash = '#/job/' + this.selectedJobId;
-      } else {
-        window.location.hash = '#/';
-      }
-    }
+    if (tab === 'history') appStore.dispatch({ type: 'SET_VIEW', view: 'history' });
+    else appStore.dispatch({ type: 'SET_VIEW', view: 'current' });
   }
 
   onLeftTabChange(e) {
-    const tab = e.detail;
-    this.activeLeftTab = tab;
-    if (tab === 'progress' && this.currentRoute === '#/') {
-      window.location.hash = '#/queue';
-    }
+    appStore.dispatch({ type: 'SET_PANEL', leftTab: e.detail });
   }
 
   onReuseSettings(e) {
     const item = e.detail;
     this.applyHistoryItemToForm(item, Boolean(item.upsampledPrompt));
-    this.captureLastGeneratorSettings();
-    this.activeLeftTab = 'generator';
-    this._preserveNextHomeRoute = true;
-    window.location.hash = '#/';
+    // Atomic reuse: switch to Current view, clear active item, close lightbox;
+    // the panel follows from derived layout and the hash projects to '#/'.
+    appStore.dispatch({ type: 'SET_VIEW', view: 'current' });
+    appStore.dispatch({ type: 'SET_ACTIVE_ITEM', id: '' });
+    appStore.dispatch({ type: 'SET_PANEL', leftTab: 'generator' });
+    appStore.dispatch({ type: 'CLOSE_LIGHTBOX' });
+    scheduleSessionSave();
   }
 
   async onReuseAdvancedSettings(e) {
     const { item, bgImage } = e.detail;
     this.applyHistoryItemToForm(item, false);
-    this.captureLastGeneratorSettings();
     try {
-      const provider = item.params.provider || item.params.endpoint || this.selectedEndpoint;
-      const providerParams = this.providerParamsFromHistory(item);
-      const upsampledPrompt = this.promptWithAspectRatio(item.upsampledPrompt, this.aspectRatioFromProviderParams(providerParams));
-      const result = await queueStore.sendJobRequest({
+      const g = appStore.getState().generator;
+      const providerParams = providerParamsFromHistory(item);
+      const upsampledPrompt = promptWithAspectRatio(item.upsampledPrompt, aspectRatioFromProviderParams(providerParams));
+      const result = await appStore.createItem({
         raw_prompt: item.rawPrompt,
-        provider,
-        upsampler: item.params.upsampler || 'deepseek',
+        provider: item.params?.provider || item.params?.endpoint || g.selectedEndpoint,
+        upsampler: item.params?.upsampler && item.params.upsampler !== 'deepseek' ? item.params.upsampler : (g.selectedUpsampler || selectDefaultUpsamplerId(appStore.getState()) || null),
         parent_uuid: item.uuid || null,
         magic_prompt: false,
         advanced_mode: true,
         provider_params: providerParams,
-        upsampler_params: item.params.upsamplerParams || { template: item.params.upsampleTemplate || 'v1' },
+        upsampler_params: item.params?.upsamplerParams || { template: item.params?.upsampleTemplate || 'v1' },
         upsampled_prompt: upsampledPrompt,
         chat_messages: [
-          { role: "system", content: "Visual Prompt Layout Chat Assistant." },
-          { role: "assistant", content: upsampledPrompt }
+          { role: 'system', content: 'Visual Prompt Layout Chat Assistant.' },
+          { role: 'assistant', content: upsampledPrompt },
         ],
-        job_type: "editing"
+        job_type: 'editing',
       });
-      const job = queueStore.getSelectedJob();
-      if (job && bgImage) queueStore.updateJob(job.id, { backgroundImage: bgImage });
-      this.activeLeftTab = 'generator';
-      window.location.hash = '#/editor/' + result.job_id;
+      const job = selectActiveItem(appStore.getState());
+      if (job && bgImage) appStore.updateItem(job.id, { backgroundImage: bgImage }, { debounce: false, patchFields: [] });
+      appStore.dispatch({ type: 'CLOSE_LIGHTBOX' });
+      appStore.dispatch({ type: 'SET_PANEL', leftTab: 'generator' });
     } catch (error) {
       this.showToast(error.message, 'error');
     }
@@ -784,10 +655,9 @@ export class AppRoot extends LitElement {
   async onEditHeldJob(e) {
     const jobId = e.detail;
     try {
-      queueStore.updateJob(jobId, { status: 'editing' });
-      await this.patchServerJob(jobId, { status: 'editing' });
-      this.activeLeftTab = 'generator';
-      window.location.hash = '#/editor/' + jobId;
+      appStore.updateItem(jobId, { status: 'editing' }, { debounce: false });
+      appStore.dispatch({ type: 'SET_ACTIVE_ITEM', id: jobId });
+      appStore.dispatch({ type: 'SET_PANEL', leftTab: 'generator' });
     } catch (err) {
       this.showToast(err.message, 'error');
     }
@@ -795,57 +665,32 @@ export class AppRoot extends LitElement {
 
   onOpenLightbox(e) {
     const { src, prompt, seed, item } = e.detail;
+    const idx = Number(e.detail.imgIdx || 0);
     this.lightboxSrc = src;
     this.lightboxPrompt = prompt;
     this.lightboxSeedLabel = seed;
     this.lightboxItem = item;
-    this.lightboxHidden = false;
-    const idx = Number(e.detail.imgIdx || 0);
     this.lightboxIndex = idx;
+    this.lightboxHidden = false;
+    appStore.dispatch({ type: 'SET_LIGHTBOX', partial: { hidden: false, src, prompt, seedLabel: seed, itemId: item.uuid || item.id, index: idx } });
     const previewsUrl = item.previewsUrl || item.previews_url;
     const isCached = this._previewsCache && this._previewsCache.has(item.uuid || item.id);
-    if (!previewsUrl || isCached) {
-      this.loadLightboxPreviews(item, idx);
-    } else {
-      this.lightboxPreviews = [];
-    }
-
-    if (item?.uuid) {
-      if (this.activeTab === 'history' || this.currentRoute.startsWith('#/history')) {
-        window.location.hash = `#/history/${item.uuid}/lightbox/${idx}`;
-      } else if (this.selectedJobId) {
-        window.location.hash = `#/job/${this.selectedJobId}/lightbox/${idx}`;
-      }
-    }
+    if (!previewsUrl || isCached) this.loadLightboxPreviews(item, idx);
+    else this.lightboxPreviews = [];
   }
 
   onHoverPrompt() {
-    if (this.lightboxItem && this.lightboxIndex !== null) {
-      if (!this.lightboxPreviews || this.lightboxPreviews.length === 0) {
-        this.loadLightboxPreviews(this.lightboxItem, this.lightboxIndex);
-      }
+    if (this.lightboxItem && this.lightboxIndex !== null && (!this.lightboxPreviews || this.lightboxPreviews.length === 0)) {
+      this.loadLightboxPreviews(this.lightboxItem, this.lightboxIndex);
     }
   }
 
   onCloseLightbox() {
-    this.closeRouteLightbox();
-    if (this.currentRoute.includes('/lightbox/')) {
-      // History lightbox: #/history/<uuid>/lightbox/N → go back to #/history
-      if (this.currentRoute.startsWith('#/history/')) {
-        window.location.hash = '#/history';
-      } else {
-        const next = this.currentRoute.replace(/\/lightbox\/\d+$/, '');
-        window.location.hash = next || '#/';
-      }
-    }
+    this.closeLightbox();
   }
 
   async onUpdateEditorPrompt(e) {
     await updateEditorPromptAction(this, e.detail);
-  }
-
-  promptToDraftJson(promptText) {
-    return promptToDraftJsonValue(promptText);
   }
 
   onEditorUndo() {
@@ -857,12 +702,8 @@ export class AppRoot extends LitElement {
   }
 
   onEditorCancel() {
-    this.editorSelectedIndex = null;
-    this.editorPinnedIndex = null;
-    if (this.selectedJobId) {
-      this.removeJob(this.selectedJobId);
-    }
-    window.location.hash = '#/';
+    appStore.dispatch({ type: 'SET_EDITOR', selectedIndex: null, pinnedIndex: null });
+    if (this.selectedJobId) this.removeJob(this.selectedJobId);
   }
 
   async onEditorGenerate() {
@@ -890,7 +731,7 @@ export class AppRoot extends LitElement {
   }
 
   render() {
-    const selectedJob = this.jobQueue.find(j => j.id === this.selectedJobId);
+    const selectedJob = this.jobQueue.find((j) => j.id === this.selectedJobId);
     const inspectorJob = this.inspectorItem ? {
       id: `inspector_${this.inspectorItem.uuid}`,
       uuid: this.inspectorItem.uuid,
@@ -911,7 +752,6 @@ export class AppRoot extends LitElement {
     return html`
       <div class="glow-bg"></div>
       <div class="app-container">
-        <!-- Header -->
         <header class="app-header">
           <div class="logo-area" @click="${this.goCleanHome}" role="button" title="New Prompt">
             <div class="logo-icon">
@@ -931,8 +771,8 @@ export class AppRoot extends LitElement {
           </div>
           <div class="header-actions">
             <button class="theme-toggle-btn" @click="${this.toggleTheme}" title="Toggle light/dark theme" aria-label="Toggle theme">
-              ${this.theme === 'light' ? 
-                html`<svg class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>` : 
+              ${this.theme === 'light' ?
+                html`<svg class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>` :
                 html`<svg class="theme-toggle-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="4.22" x2="19.78" y2="5.64"/></svg>`
               }
             </button>
@@ -943,9 +783,7 @@ export class AppRoot extends LitElement {
           </div>
         </header>
 
-        <!-- Main Workspace -->
         <main class="workspace ${showEditorSidebar ? 'editing' : ''}">
-          <!-- Left Panel: Controls -->
           <control-panel
             .templates="${this.templates}"
             .hasCachedUpsample="${!!this.cachedUpsampledPrompt}"
@@ -954,22 +792,21 @@ export class AppRoot extends LitElement {
             .bypassUpsample="${this.bypassUpsample}"
             .selectedTemplate="${this.selectedTemplate}"
             .advancedMode="${this.advancedMode}"
-            .endpoints="${this.endpoints}"
-            .selectedEndpoint="${this.selectedEndpoint}"
             .providerSchemas="${this.providerSchemas}"
             .providerParams="${this.providerParams}"
+            .selectedEndpoint="${this.selectedEndpoint}"
             .selectedUpsampler="${this.selectedUpsampler}"
             .isEditing="${showEditorSidebar}"
             .jobQueue="${this.jobQueue}"
             .selectedJobId="${this.selectedJobId}"
             .activeLeftTab="${this.activeLeftTab}"
             .isJsonMode="${this.isJsonMode}"
-            @is-json-change="${(e) => { this.isJsonMode = e.detail; this.scheduleSessionSave(); }}"
+            @is-json-change="${(e) => this.onIsJsonChange(e)}"
             @prompt-change="${this.onPromptChange}"
             @magic-change="${this.onMagicChange}"
             @bypass-change="${this.onBypassChange}"
             @template-change="${this.onTemplateChange}"
-            @upsampler-change="${(e) => { this.selectedUpsampler = e.detail; this.scheduleSessionSave(); }}"
+            @upsampler-change="${(e) => this.onUpsamplerChange(e)}"
             @advanced-change="${this.onAdvancedChange}"
             @endpoint-change="${this.onEndpointChange}"
             @provider-params-change="${this.onProviderParamsChange}"
@@ -980,7 +817,6 @@ export class AppRoot extends LitElement {
             @clear-completed-jobs="${this.onClearCompletedJobs}">
           </control-panel>
 
-          <!-- Center Panel: Results & Status -->
           <display-panel
             .selectedJob="${editorJob}"
             .activeTab="${this.activeTab}"
@@ -1006,13 +842,12 @@ export class AppRoot extends LitElement {
             @update-editor-prompt="${this.onUpdateEditorPrompt}"
             @editor-undo="${this.onEditorUndo}"
             @editor-redo="${this.onEditorRedo}"
-            @element-selected="${(e) => { this.editorSelectedIndex = e.detail; this.requestUpdate(); }}"
-            @element-pinned="${(e) => { this.editorPinnedIndex = e.detail; this.requestUpdate(); }}"
+            @element-selected="${(e) => { appStore.dispatch({ type: 'SET_EDITOR', selectedIndex: e.detail }); }}"
+            @element-pinned="${(e) => { appStore.dispatch({ type: 'SET_EDITOR', pinnedIndex: e.detail }); }}"
             @editor-cancel="${this.onEditorCancel}"
             @editor-generate="${this.onEditorGenerate}">
           </display-panel>
 
-          <!-- Right Panel: Editor Sidebar (only in editing mode) -->
           ${showEditorSidebar && editorJob ? html`
             <section class="editor-sidebar-column glass-card">
               <editor-sidebar
@@ -1027,25 +862,20 @@ export class AppRoot extends LitElement {
                 @chat-provider-change="${this.onChatProviderChange}"
                 @update-prompt="${(e) => this.onUpdateEditorPrompt(e)}"
                 @send-chat="${this.onSendEditorChat}"
-                @element-selected="${(e) => { this.editorSelectedIndex = e.detail; this.requestUpdate(); }}"
-                @element-pinned="${(e) => { this.editorPinnedIndex = e.detail; this.requestUpdate(); }}">
+                @element-selected="${(e) => { appStore.dispatch({ type: 'SET_EDITOR', selectedIndex: e.detail }); }}"
+                @element-pinned="${(e) => { appStore.dispatch({ type: 'SET_EDITOR', pinnedIndex: e.detail }); }}">
               </editor-sidebar>
             </section>
           ` : ''}
         </main>
       </div>
 
-      <!-- Toast notifications -->
       <div class="toast-container">
-        ${this.toasts.map(t => html`
+        ${this.toasts.map((t) => html`
           <div class="toast ${t.type}">
             <div class="toast-content">
               <span class="toast-icon">
-                ${t.type === 'success' ? html`
-                  ${icon('check', 16)}
-                ` : html`
-                  ${icon('info', 16)}
-                `}
+                ${t.type === 'success' ? html`${icon('check', 16)}` : html`${icon('info', 16)}`}
               </span>
               <span class="toast-message">${t.message}</span>
             </div>
@@ -1053,7 +883,6 @@ export class AppRoot extends LitElement {
         `)}
       </div>
 
-      <!-- Lightbox overlay -->
       <image-lightbox
         .src="${this.lightboxSrc}"
         .prompt="${this.lightboxPrompt}"

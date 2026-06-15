@@ -2,6 +2,7 @@ import json
 from typing import Any, Callable, Dict, List, Optional
 import requests
 
+from backend.cancellation import JobCancelled, token_cancelled
 from backend.prompts import load_template_prompts
 from backend.utils import clean_and_reorder_prompt_json, clean_json_in_text
 from backend.provider_loader import _resolve_templates
@@ -38,10 +39,10 @@ class ChatEngine:
         kwargs = {"timeout": req_cfg.get("timeout", 180), "json": payload}
         return method, url, headers, kwargs
 
-    def query(self, config: Dict[str, Any], messages: List[Dict[str, str]], stream_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    def query(self, config: Dict[str, Any], messages: List[Dict[str, str]], stream_callback: Optional[Callable] = None, cancel_token=None) -> Dict[str, Any]:
         stream_cfg = config.get("streaming", {})
         if stream_callback and stream_cfg.get("enabled", True):
-            return self.query_stream(config, messages, stream_callback)
+            return self.query_stream(config, messages, stream_callback, cancel_token=cancel_token)
             
         method, url, headers, kwargs = self._build_request_args(config, messages, stream=False)
         if config.get("logging", False):
@@ -63,7 +64,7 @@ class ChatEngine:
                     message["content"] = clean_json_in_text(message["content"])
         return data
 
-    def query_stream(self, config: Dict[str, Any], messages: List[Dict[str, str]], stream_callback: Callable[[str, str], None]) -> Dict[str, Any]:
+    def query_stream(self, config: Dict[str, Any], messages: List[Dict[str, str]], stream_callback: Callable[[str, str], None], cancel_token=None) -> Dict[str, Any]:
         method, url, headers, kwargs = self._build_request_args(config, messages, stream=True)
         kwargs["stream"] = True
         
@@ -84,9 +85,13 @@ class ChatEngine:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         
-        with requests.request(method, url, headers=headers, **kwargs) as response:
+        response = requests.request(method, url, headers=headers, **kwargs)
+        try:
             response.raise_for_status()
             for raw_line in response.iter_lines(decode_unicode=True):
+                if token_cancelled(cancel_token):
+                    print("[ChatEngine] Cancel token set; aborting stream.", flush=True)
+                    raise JobCancelled()
                 if not raw_line:
                     continue
                 line = raw_line.strip()
@@ -131,6 +136,11 @@ class ChatEngine:
                     if content:
                         content_parts.append(content)
                         stream_callback("content", content)
+        finally:
+            try:
+                response.close()
+            except Exception:
+                pass
 
         content = clean_json_in_text("".join(content_parts))
         return {
@@ -145,17 +155,17 @@ class ChatEngine:
             ]
         }
 
-    def upsample_prompt(self, config: Dict[str, Any], raw_prompt: str, aspect_ratio: str, params: Dict[str, Any], stream_callback: Optional[Callable] = None) -> Dict[str, Any]:
+    def upsample_prompt(self, config: Dict[str, Any], raw_prompt: str, aspect_ratio: str, params: Dict[str, Any], stream_callback: Optional[Callable] = None, cancel_token=None) -> Dict[str, Any]:
         template_name = params.get("template", "v1")
         templates = load_template_prompts(template_name)
         user_content = templates["user"].replace("{{aspect_ratio}}", aspect_ratio)
         user_content = user_content.replace("{{original_prompt}}", raw_prompt)
         messages = [{"role": "system", "content": templates["system"]}, {"role": "user", "content": user_content}]
-        data = self.query(config, messages, stream_callback=stream_callback)
+        data = self.query(config, messages, stream_callback=stream_callback, cancel_token=cancel_token)
         content = data["choices"][0]["message"]["content"].strip()
         return {"content": clean_and_reorder_prompt_json(content), "messages": messages}
 
-    def describe_json(self, config: Dict[str, Any], json_prompt: str) -> str:
+    def describe_json(self, config: Dict[str, Any], json_prompt: str, cancel_token=None) -> str:
         messages = [
             {
                 "role": "system",
@@ -163,7 +173,7 @@ class ChatEngine:
             },
             {"role": "user", "content": f"Here is the JSON prompt:\n{json_prompt}"},
         ]
-        data = self.query(config, messages)
+        data = self.query(config, messages, cancel_token=cancel_token)
         description = data["choices"][0]["message"]["content"].strip()
         if description.startswith('"') and description.endswith('"'):
             description = description[1:-1]

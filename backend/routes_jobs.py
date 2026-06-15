@@ -7,12 +7,13 @@ import anyio
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from sqlalchemy import or_
 
+from backend.cancellation import JobCancelled
 from backend.database import SessionLocal
-from backend.job_runner import cancel_job_task, get_hold_generation, get_llm_semaphore, schedule_job
+from backend.job_runner import cancel_job_task, get_cancel_token, get_hold_generation, get_llm_semaphore, schedule_job
 from backend.job_state import build_steps, job_to_dict, update_job_record
 from backend.json_helpers import strict_json_prompt
 from backend.models import ActiveJob
-from backend.providers import get_generation_providers, get_upsampler_providers, get_chat_providers
+from backend.providers import get_default_upsampler_id, get_generation_providers, get_upsampler_providers, get_chat_providers
 from backend.schemas import JobCreate
 from backend.ws import finish_websocket_stream, push_job, websocket_stream_callback, ws_manager
 
@@ -42,21 +43,26 @@ async def create_job(payload: JobCreate):
     generation_providers = get_generation_providers()
     if payload.provider not in generation_providers:
         raise HTTPException(status_code=400, detail=f"Unknown provider: {payload.provider}")
-    if payload.upsampler and payload.upsampler not in get_upsampler_providers():
-        raise HTTPException(status_code=400, detail=f"Unknown upsampler: {payload.upsampler}")
+    upsampler_providers = get_upsampler_providers()
+    # Resolve a concrete upsampler id; never carry the legacy "deepseek" literal.
+    upsampler_id = payload.upsampler
+    if upsampler_id is None:
+        upsampler_id = get_default_upsampler_id()
+    if upsampler_id and upsampler_id not in upsampler_providers:
+        raise HTTPException(status_code=400, detail=f"Unknown upsampler: {upsampler_id}")
 
     job_id = f"job_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
     job_uuid = str(uuid.uuid4())
     # When advanced_mode + cached upsampled_prompt are both present, create
     # as "editing" directly to avoid a race condition where the async task's
     # quick WebSocket update gets overwritten by the HTTP response.
+    # Note: hold_generation is intentionally NOT applied here — it must only
+    # gate the generation step, so the job is scheduled and allowed to upsample;
+    # execute_server_job parks it as "held" right before rendering.
     if payload.job_type == "editing":
         status = "editing"
     elif payload.advanced_mode and payload.upsampled_prompt:
         status = "editing"
-    elif get_hold_generation():
-        # Hold active: immediately park as held so it never starts
-        status = "held"
     else:
         status = "pending"
     upsampler_params = dict(payload.upsampler_params or {})
@@ -72,6 +78,9 @@ async def create_job(payload: JobCreate):
             {"role": "system", "content": "Visual Prompt Layout Chat Assistant."},
             {"role": "assistant", "content": payload.upsampled_prompt},
         ]
+    # Editor sessions chain subsequent generates from this head; seeded to the
+    # history ancestor at creation and advanced after each generate.
+    editor_chain_head_uuid = payload.parent_uuid if status == "editing" else None
     with SessionLocal() as db:
         job = ActiveJob(
             job_id=job_id,
@@ -79,10 +88,10 @@ async def create_job(payload: JobCreate):
             parent_uuid=payload.parent_uuid,
             status=status,
             provider=payload.provider,
-            upsampler=payload.upsampler,
+            upsampler=upsampler_id,
             job_type=payload.job_type,
             progress_step=status,
-            display_text="Layout draft ready" if status == "editing" else ("Held in queue" if status == "held" else "Queued"),
+            display_text="Layout draft ready" if status == "editing" else "Queued",
             raw_prompt=payload.raw_prompt,
             upsampled_prompt=payload.upsampled_prompt,
             provider_params=payload.provider_params or {},
@@ -90,6 +99,7 @@ async def create_job(payload: JobCreate):
             draft_json=payload.draft_json,
             chat_messages=chat_messages,
             steps=steps,
+            editor_chain_head_uuid=editor_chain_head_uuid,
         )
         db.add(job)
         db.commit()
@@ -99,7 +109,9 @@ async def create_job(payload: JobCreate):
     await push_job("job_created", response_job)
     if status == "pending":
         schedule_job(job_id)
-    return {"job_id": job_id, "uuid": job_uuid, "job": response_job, "held": status == "held"}
+    # `held` reflects whether hold_generation is active (the generation step will
+    # be parked after upsampling completes), not the job's creation status.
+    return {"job_id": job_id, "uuid": job_uuid, "job": response_job, "held": get_hold_generation()}
 
 
 @router.get("/api/jobs/active")
@@ -159,6 +171,8 @@ async def patch_job(job_id: str, request: Request):
         "draftJson": "draft_json",
         "chat_messages": "chat_messages",
         "chatMessages": "chat_messages",
+        "editor_chain_head_uuid": "editor_chain_head_uuid",
+        "editorChainHeadUuid": "editor_chain_head_uuid",
         "status": "status",
     }
     updates = {target: data[source] for source, target in allowed.items() if source in data}
@@ -201,8 +215,22 @@ async def chat_job(job_id: str, request: Request):
         raise HTTPException(status_code=400, detail="No chat-capable providers configured")
         
     stream_emit = websocket_stream_callback(job_id, "chat")
-    async with get_llm_semaphore():
-        result = await anyio.to_thread.run_sync(provider.query, model_messages, stream_emit)
+    cancel_token = get_cancel_token(job_id)
+    try:
+        async with get_llm_semaphore():
+            result = await anyio.to_thread.run_sync(
+                lambda: provider.query(model_messages, stream_emit, cancel_token=cancel_token)
+            )
+    except JobCancelled:
+        await ws_manager.broadcast({
+            "event_type": "llm_stream",
+            "job_id": job_id,
+            "context": "chat",
+            "stream_type": "content",
+            "token": "",
+            "done": True,
+        })
+        raise HTTPException(status_code=499, detail="Chat cancelled")
     assistant_text = result["choices"][0]["message"]["content"].strip()
     try:
         assistant_reply = strict_json_prompt(assistant_text)

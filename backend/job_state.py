@@ -46,6 +46,7 @@ def job_to_dict(job: ActiveJob) -> dict:
         "job_id": job.job_id,
         "uuid": job.uuid,
         "parentUuid": job.parent_uuid,
+        "editorChainHeadUuid": job.editor_chain_head_uuid or job.parent_uuid,
         "rawPrompt": job.raw_prompt,
         "upsampledPrompt": job.upsampled_prompt,
         "params": job_params_for_client(job),
@@ -63,6 +64,8 @@ def job_to_dict(job: ActiveJob) -> dict:
         "images": job.images,
         "previewsUrl": job.previews_url,
         "error": job.error_message,
+        "updatedAt": job.updated_at.isoformat() if job.updated_at else None,
+        "createdAt": job.created_at.isoformat() if job.created_at else None,
     }
 
 
