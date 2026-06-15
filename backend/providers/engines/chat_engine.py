@@ -7,6 +7,20 @@ from backend.prompts import load_template_prompts
 from backend.utils import clean_and_reorder_prompt_json, clean_json_in_text
 from backend.provider_loader import _resolve_templates
 
+def _format_payload(kwargs: Dict[str, Any]) -> Any:
+    payload = kwargs.get("json") or kwargs.get("params")
+    if payload is None and "data" in kwargs:
+        try:
+            payload = json.loads(kwargs["data"])
+        except Exception:
+            payload = kwargs["data"]
+    if isinstance(payload, dict):
+        return {k: (v[:80] + "..." if isinstance(v, str) and len(v) > 80 else v) for k, v in payload.items()}
+    if isinstance(payload, str) and len(payload) > 80:
+        return payload[:80] + "..."
+    return payload
+
+
 class ChatEngine:
     def __init__(self):
         pass
@@ -47,7 +61,7 @@ class ChatEngine:
         method, url, headers, kwargs = self._build_request_args(config, messages, stream=False)
         if config.get("logging", False):
             safe_headers = {k: ("***" if any(x in k.lower() for x in ["api", "auth", "secret", "token"]) else v) for k, v in headers.items()}
-            print(f"[ChatEngine] Query Request:\n  URL: {url}\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json')}", flush=True)
+            print(f"[ChatEngine] Query Request:\n  URL: {url}\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {_format_payload(kwargs)}", flush=True)
         else:
             print(f"[ChatEngine] Query request to: {url}", flush=True)
             
@@ -70,7 +84,7 @@ class ChatEngine:
         
         if config.get("logging", False):
             safe_headers = {k: ("***" if any(x in k.lower() for x in ["api", "auth", "secret", "token"]) else v) for k, v in headers.items()}
-            print(f"[ChatEngine] Query Stream Request:\n  URL: {url}\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json')}", flush=True)
+            print(f"[ChatEngine] Query Stream Request:\n  URL: {url}\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {_format_payload(kwargs)}", flush=True)
         else:
             print(f"[ChatEngine] Query stream request to: {url}", flush=True)
         

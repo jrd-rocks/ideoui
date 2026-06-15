@@ -12,6 +12,20 @@ from backend.storage import upload_image
 from backend.utils import clean_and_reorder_prompt_json
 from backend.provider_loader import _resolve_templates
 
+def _format_payload(kwargs: Dict[str, Any]) -> Any:
+    payload = kwargs.get("json") or kwargs.get("params")
+    if payload is None and "data" in kwargs:
+        try:
+            payload = json.loads(kwargs["data"])
+        except Exception:
+            payload = kwargs["data"]
+    if isinstance(payload, dict):
+        return {k: (v[:80] + "..." if isinstance(v, str) and len(v) > 80 else v) for k, v in payload.items()}
+    if isinstance(payload, str) and len(payload) > 80:
+        return payload[:80] + "..."
+    return payload
+
+
 class HttpEngine:
     def __init__(self):
         self._active_response = None
@@ -88,7 +102,7 @@ class HttpEngine:
         proxies_log = f" via proxy {kwargs['proxies']}" if "proxies" in kwargs else ""
         print(f"[HttpEngine] Non-streaming request to: {url}{proxies_log}", flush=True)
         safe_headers = {k: ("***" if any(x in k.lower() for x in ["api", "auth", "secret", "token"]) else v) for k, v in headers.items()}
-        print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json') or kwargs.get('params')}", flush=True)
+        print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {_format_payload(kwargs)}", flush=True)
             
         response = requests.request(method, url, headers=headers, **kwargs)
         if token_cancelled(cancel_token):
@@ -136,7 +150,7 @@ class HttpEngine:
         proxies_log = f" via proxy {kwargs['proxies']}" if "proxies" in kwargs else ""
         print(f"[HttpEngine] Streaming from: {url}{proxies_log}", flush=True)
         safe_headers = {k: ("***" if any(x in k.lower() for x in ["api", "auth", "secret", "token"]) else v) for k, v in headers.items()}
-        print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json') or kwargs.get('params')}", flush=True)
+        print(f"[HttpEngine] Request Details:\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {_format_payload(kwargs)}", flush=True)
             
         self._active_response = requests.request(method, url, headers=headers, **kwargs)
         try:
@@ -207,7 +221,7 @@ class HttpEngine:
         # Log the sent parameters (excluding API key values for security)
         if config.get("logging", False):
             safe_headers = {k: ("***" if any(x in k.lower() for x in ["api", "auth", "secret", "token"]) else v) for k, v in headers.items()}
-            print(f"[HttpEngine] Sending upsample request:\n  URL: {url}\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {kwargs.get('json') or kwargs.get('params')}", flush=True)
+            print(f"[HttpEngine] Sending upsample request:\n  URL: {url}\n  Method: {method}\n  Headers: {safe_headers}\n  Payload: {_format_payload(kwargs)}", flush=True)
         else:
             print(f"[HttpEngine] Upsample request to: {url}", flush=True)
         
