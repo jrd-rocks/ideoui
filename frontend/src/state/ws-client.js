@@ -111,9 +111,34 @@ function applyGenerationProgress(payload) {
   if (payload.progress_event === 'step') {
     updates.genStep = payload.step;
     updates.genTotal = payload.total;
+    updates.genImageCurrent = payload.imageCurrent ?? null;
+    updates.genImageTotal = payload.imageTotal ?? null;
+    updates.genStepCurrent = payload.stepCurrent ?? null;
+    updates.genStepTotal = payload.stepTotal ?? null;
     if (payload.previews) {
-      const all = Object.values(payload.previews).flat();
-      if (all.length) updates.genPreviews = all.map((p) => `data:image/jpeg;base64,${p}`);
+      const imageCount = getGenerationImageCount(item);
+      const nextPreviews = Array.from(
+        { length: imageCount },
+        (_, index) => item.genPreviews?.[index] || null
+      );
+      let changed = false;
+      for (const [key, value] of Object.entries(payload.previews)) {
+        const previews = Array.isArray(value) ? value : [];
+        if (!previews.length) continue;
+
+        if (previews.length === 1 && imageCount > 1) {
+          const numericKey = Number(key);
+          const slot = Number.isFinite(numericKey) ? (Math.max(1, Math.floor(numericKey)) - 1) % imageCount : 0;
+          nextPreviews[slot] = `data:image/jpeg;base64,${previews[0]}`;
+          changed = true;
+        } else {
+          previews.slice(0, imageCount).forEach((preview, index) => {
+            nextPreviews[index] = `data:image/jpeg;base64,${preview}`;
+            changed = true;
+          });
+        }
+      }
+      if (changed) updates.genPreviews = nextPreviews;
     }
   } else if (payload.progress_event === 'status') {
     updates.genStatus = payload.text;
@@ -121,4 +146,11 @@ function applyGenerationProgress(payload) {
   if (item.status !== 'generating') updates.status = 'generating';
   appStore.reconcileItem({ ...item, ...updates });
   appStore.notify();
+}
+
+function getGenerationImageCount(item) {
+  const providerParams = item.providerParams || item.params?.providerParams || {};
+  const raw = providerParams.image_count ?? providerParams.imageCount ?? item.params?.imageCount ?? item.params?.image_count ?? 1;
+  const count = Number(raw);
+  return Number.isFinite(count) && count > 0 ? Math.max(1, Math.round(count)) : 1;
 }

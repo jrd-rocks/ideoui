@@ -261,7 +261,14 @@ async def execute_server_job(job_id: str, cancel_token: Optional[threading.Event
             if event_type == "step":
                 step = data.get("current", 0)
                 total = data.get("total", 0)
-                display = f"Step {step}/{total}"
+                image_current = data.get("image_current")
+                image_total = data.get("image_total")
+                step_current = data.get("step_current")
+                step_total = data.get("step_total")
+                if image_current and image_total and step_current and step_total:
+                    display = f"Image {image_current}/{image_total} | Step {step_current}/{step_total}"
+                else:
+                    display = f"Step {step}/{total}"
                 update_job_record(job_id, display_text=display, progress_step="generating")
                 previews = data.get("previews")
                 if previews and isinstance(previews, dict):
@@ -273,7 +280,12 @@ async def execute_server_job(job_id: str, cancel_token: Optional[threading.Event
                         except ValueError:
                             pass
                 push_generation_progress(job_id, "step", {
-                    "step": step, "total": total,
+                    "step": step,
+                    "total": total,
+                    "imageCurrent": image_current,
+                    "imageTotal": image_total,
+                    "stepCurrent": step_current,
+                    "stepTotal": step_total,
                     "previews": previews,
                 })
             elif event_type == "status":

@@ -23,6 +23,7 @@ height = "{{inputs.height}}"
 num_images_per_prompt = "{{inputs.image_count}}"
 prompt_upsampling = "false"
 sampler_preset = "{{inputs.sampler_preset}}"
+sequential_batch = "{{inputs.sequential_batch}}"
 [request.optional_fields]
 n_steps = "{{inputs.steps}}"
 guidance_scale = "{{inputs.guidance}}"
@@ -109,6 +110,11 @@ min = 1
 max = 4
 default = 4
 
+[inputs.sequential_batch]
+label = "Sequential batch 1"
+type = "checkbox"
+default = false
+
 [inputs.seed]
 label = "Seed"
 type = "number"
@@ -124,6 +130,8 @@ fields = [{ id = "scale", col_span = 2 }]
 fields = [{ id = "steps", col_span = 1 }, { id = "guidance", col_span = 1 }]
 [[layout]]
 fields = [{ id = "image_count", col_span = 1 }, { id = "seed", col_span = 1 }]
+[[layout]]
+fields = [{ id = "sequential_batch", col_span = 2 }]
 
 [sizes]
 "1:1" = [1024, 1024]

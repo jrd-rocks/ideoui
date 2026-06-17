@@ -265,7 +265,14 @@ export class DisplayPanel extends LitElement {
     const loadingMsg = job.displayText || job.display_text || "Waiting for the next server update...";
     const steps = job.steps && job.steps.length ? job.steps : [{ name: loadingMsg, status: "active" }];
     const hasPreviews = job.genPreviews && job.genPreviews.length > 0;
-    const stepLabel = job.genStep && job.genTotal ? `Step ${job.genStep}/${job.genTotal}` : '';
+    const providerParams = job.providerParams || job.params?.providerParams || {};
+    const rawImageCount = providerParams.image_count ?? providerParams.imageCount ?? job.params?.imageCount ?? job.params?.image_count ?? 1;
+    const imageCount = Number.isFinite(Number(rawImageCount)) && Number(rawImageCount) > 0 ? Math.max(1, Math.round(Number(rawImageCount))) : 1;
+    const previewSlots = hasPreviews ? Array.from({ length: imageCount }, (_, index) => job.genPreviews?.[index] || null) : [];
+    const splitStepLabel = job.genImageCurrent && job.genImageTotal && job.genStepCurrent && job.genStepTotal
+      ? `Image ${job.genImageCurrent}/${job.genImageTotal} | Step ${job.genStepCurrent}/${job.genStepTotal}`
+      : '';
+    const stepLabel = splitStepLabel || (job.genStep && job.genTotal ? `Step ${job.genStep}/${job.genTotal}` : '');
 
     return html`
       <!-- Loading State -->
@@ -290,13 +297,17 @@ export class DisplayPanel extends LitElement {
         </div>
         ${hasPreviews ? html`
           <div class="gen-preview-grid">
-            ${job.genPreviews.map((src, i) => {
+            ${previewSlots.map((src, i) => {
               const sizeStr = job.params?.size || "1024x1024";
               const [w, h] = sizeStr.split("x").map(Number);
               const aspect = (w && h) ? `${w} / ${h}` : "1 / 1";
               return html`
-                <div class="gen-preview-card" style="aspect-ratio: ${aspect};">
-                  <img class="gen-preview-img" src="${src}" alt="Preview ${i + 1}">
+                <div class="gen-preview-card ${src ? '' : 'pending'}" style="aspect-ratio: ${aspect};">
+                  ${src ? html`
+                    <img class="gen-preview-img" src="${src}" alt="Preview ${i + 1}">
+                  ` : html`
+                    <div class="gen-preview-placeholder">Waiting for image ${i + 1}</div>
+                  `}
                 </div>
               `;
             })}

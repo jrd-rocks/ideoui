@@ -75,9 +75,10 @@ class HttpEngine:
                 payload[k] = clean_and_reorder_prompt_json(payload[k])
 
         # Type conversion (bool strings -> bools) if the API expects it.
-        # prompt_upsampling is sent as a string "true"/"false".
-        if "prompt_upsampling" in payload and isinstance(payload["prompt_upsampling"], str):
-            payload["prompt_upsampling"] = payload["prompt_upsampling"].lower()
+        # Modal query params receive booleans as "true"/"false" strings.
+        for key in ["prompt_upsampling", "sequential_batch"]:
+            if key in payload and isinstance(payload[key], str):
+                payload[key] = payload[key].lower()
 
         kwargs = {"timeout": req_cfg.get("timeout", 600)}
         if req_cfg.get("format") == "json_body":
