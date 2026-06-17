@@ -2,6 +2,7 @@ import json
 import time
 import uuid
 from datetime import datetime, timedelta
+from typing import Optional
 
 import anyio
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -13,29 +14,76 @@ from backend.job_runner import cancel_job_task, get_cancel_token, get_hold_gener
 from backend.job_state import build_steps, job_to_dict, update_job_record
 from backend.json_helpers import strict_json_prompt
 from backend.models import ActiveJob
+from backend.prompts import load_template_prompts, template_file_path
 from backend.providers import get_default_upsampler_id, get_generation_providers, get_upsampler_providers, get_chat_providers
 from backend.schemas import JobCreate
-from backend.ws import finish_websocket_stream, push_job, websocket_stream_callback, ws_manager
+from backend.ws import abort_websocket_stream, finish_websocket_stream, push_job, websocket_stream_callback, ws_manager
 
 
 router = APIRouter(tags=["jobs"])
 
 
-def editor_chat_messages(current_json: str, user_message: str) -> list[dict]:
-    return [
-        {
-            "role": "system",
-            "content": (
-                "You are editing an Ideogram structured JSON prompt. "
-                "Return ONLY one valid JSON object. Do not use markdown, headings, bullets, commentary, or code fences. "
-                "Preserve this schema: aspect_ratio, high_level_description, optional style_description, "
-                "and compositional_deconstruction with background and elements. "
-                "Each element must keep type, bbox, and desc/text fields as appropriate."
-            ),
-        },
-        {"role": "assistant", "content": current_json or "{}"},
-        {"role": "user", "content": user_message or "Refine the current layout while preserving valid JSON."},
-    ]
+def editor_chat_messages(current_json: str, user_message: str, template_name: str = "v1", history: Optional[list] = None) -> list[dict]:
+    fallback_system = (
+        "You are editing an Ideogram structured JSON prompt. "
+        "Return ONLY one valid JSON object. Do not use markdown, headings, bullets, commentary, or code fences. "
+        "Preserve this schema: aspect_ratio, high_level_description, optional style_description, "
+        "and compositional_deconstruction with background and elements. "
+        "Each element must keep type, bbox, and desc/text fields as appropriate."
+    )
+    try:
+        format_system = (load_template_prompts(template_name or "v1") or {}).get("system", "").strip()
+    except Exception:
+        format_system = ""
+    system_content = (
+        "You are refining an EXISTING structured JSON prompt through a chat conversation. "
+        "Apply the user's requested changes while preserving a single valid JSON object that obeys the output format below. "
+        "Return ONLY the JSON object — no markdown, code fences, or commentary.\n\n"
+        + (format_system or fallback_system)
+    )
+    # Build a true multi-turn conversation from the supplied chat history when
+    # available. Prior "system" messages are dropped (we inject our own) and
+    # empty / streaming-placeholder entries are skipped, so the model only sees
+    # the real user<->assistant turns in order.
+    turns = []
+    for msg in history or []:
+        role = msg.get("role") if isinstance(msg, dict) else None
+        if role not in ("user", "assistant"):
+            continue
+        content = (msg.get("content") or "").strip()
+        if not content:
+            continue
+        turns.append({"role": role, "content": content})
+
+    if not turns:
+        turns = [
+            {"role": "assistant", "content": current_json or "{}"},
+            {"role": "user", "content": user_message or "Refine the current layout while preserving valid JSON."},
+        ]
+
+    return [{"role": "system", "content": system_content}, *turns]
+
+
+def log_chat_messages(job_id: str, template_name: str, messages: list[dict]) -> None:
+    # Debug aid: show what we're about to send to the LLM. Every message is
+    # truncated to its first ~60 chars (system included) EXCEPT the last user
+    # message, which is logged in full. Also notes which template/system-prompt
+    # file (if any) backs the system message.
+    file_path = template_file_path(template_name)
+    if file_path.exists():
+        src = f"system_prompt_file='{file_path.name}' [found]"
+    else:
+        src = f"system_prompt_file='{file_path.name}' [MISSING - fallback]"
+    print(f"[Chat] job={job_id} template={template_name!r} {src} sending {len(messages)} messages:", flush=True)
+    last_idx = len(messages) - 1
+    for idx, msg in enumerate(messages):
+        role = msg.get("role", "?")
+        content = msg.get("content") or ""
+        is_last_user = idx == last_idx and role == "user"
+        shown = content if is_last_user else content[:60] + ("..." if len(content) > 60 else "")
+        shown = shown.replace("\n", "\\n")
+        marker = " (full)" if is_last_user else ""
+        print(f"[Chat]   [{idx}] {role}{marker}: {shown}", flush=True)
 
 
 @router.post("/api/jobs", status_code=202)
@@ -196,6 +244,7 @@ async def chat_job(job_id: str, request: Request):
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
         current_json = job.upsampled_prompt or "{}"
+        stored_template = (job.upsampler_params or {}).get("template") or "v1"
         if not visible_messages:
             visible_messages = list(job.chat_messages or [])
             if user_message:
@@ -204,7 +253,9 @@ async def chat_job(job_id: str, request: Request):
         job.updated_at = datetime.utcnow()
         db.commit()
 
-    model_messages = editor_chat_messages(current_json, user_message or "")
+    effective_template = body.get("chat_template") or body.get("template") or stored_template or "v1"
+    model_messages = editor_chat_messages(current_json, user_message or "", effective_template, visible_messages)
+    log_chat_messages(job_id, effective_template, model_messages)
     chat_provider_id = body.get("chat_provider")
     chat_providers = get_chat_providers()
     if chat_provider_id and chat_provider_id in chat_providers:
@@ -222,27 +273,13 @@ async def chat_job(job_id: str, request: Request):
                 lambda: provider.query(model_messages, stream_emit, cancel_token=cancel_token)
             )
     except JobCancelled:
-        await ws_manager.broadcast({
-            "event_type": "llm_stream",
-            "job_id": job_id,
-            "context": "chat",
-            "stream_type": "content",
-            "token": "",
-            "done": True,
-        })
+        await abort_websocket_stream(job_id, "chat", stream_emit)
         raise HTTPException(status_code=499, detail="Chat cancelled")
     assistant_text = result["choices"][0]["message"]["content"].strip()
     try:
         assistant_reply = strict_json_prompt(assistant_text)
     except ValueError as exc:
-        await ws_manager.broadcast({
-            "event_type": "llm_stream",
-            "job_id": job_id,
-            "context": "chat",
-            "stream_type": "content",
-            "token": "",
-            "done": True,
-        })
+        await finish_websocket_stream(job_id, "chat", stream_emit)
         raise HTTPException(status_code=502, detail=str(exc))
     await finish_websocket_stream(job_id, "chat", stream_emit)
 

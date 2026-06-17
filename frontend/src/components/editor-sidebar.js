@@ -10,7 +10,9 @@ export class EditorSidebar extends LitElement {
     selectedElementIndex: { type: Number },
     pinnedBoxIndex: { type: Number },
     chatProviders: { type: Array },
-    selectedChatProvider: { type: String }
+    selectedChatProvider: { type: String },
+    templates: { type: Array },
+    selectedChatTemplate: { type: String }
   };
 
   createRenderRoot() {
@@ -613,7 +615,10 @@ export class EditorSidebar extends LitElement {
             .isRefining="${this.isRefining}"
             .chatProviders="${this.chatProviders}"
             .selectedChatProvider="${this.selectedChatProvider}"
+            .templates="${this.templates}"
+            .selectedChatTemplate="${this.selectedChatTemplate}"
             @chat-provider-change="${(e) => this.dispatchEvent(new CustomEvent('chat-provider-change', { detail: e.detail }))}"
+            @chat-template-change="${(e) => this.dispatchEvent(new CustomEvent('chat-template-change', { detail: e.detail }))}"
             @send-chat="${(e) => this.dispatchEvent(new CustomEvent('send-chat', { detail: e.detail }))}">
           </ai-chat>
         </div>

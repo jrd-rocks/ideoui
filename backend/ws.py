@@ -38,7 +38,9 @@ def websocket_stream_callback(job_id: str, context: str):
             emit.thinking_count += 1
         else:
             emit.content_count += 1
-        print(f"[WebSocket Stream] Forwarding {stream_type} chunk job={job_id} context={context} chars={len(token)}", flush=True)
+        if not emit.started:
+            emit.started = True
+            print(f"[WebSocket Stream] Start job={job_id} context={context}", flush=True)
         anyio.from_thread.run(
             ws_manager.broadcast,
             {
@@ -54,17 +56,31 @@ def websocket_stream_callback(job_id: str, context: str):
     emit.chunk_count = 0
     emit.thinking_count = 0
     emit.content_count = 0
+    emit.started = False
     return emit
 
 
 async def finish_websocket_stream(job_id: str, context: str, callback=None):
     if callback is not None:
         print(
-            f"[WebSocket Stream] Stream complete job={job_id} context={context} forwarded_chunks={callback.chunk_count} thinking_chunks={callback.thinking_count} content_chunks={callback.content_count}",
+            f"[WebSocket Stream] End job={job_id} context={context} forwarded_chunks={callback.chunk_count} thinking_chunks={callback.thinking_count} content_chunks={callback.content_count}",
             flush=True,
         )
     else:
-        print(f"[WebSocket Stream] Stream complete job={job_id} context={context}", flush=True)
+        print(f"[WebSocket Stream] End job={job_id} context={context}", flush=True)
+    await ws_manager.broadcast({
+        "event_type": "llm_stream",
+        "job_id": job_id,
+        "context": context,
+        "stream_type": "content",
+        "token": "",
+        "done": True,
+    })
+
+
+async def abort_websocket_stream(job_id: str, context: str, callback=None):
+    extra = f" forwarded_chunks={callback.chunk_count}" if callback is not None else ""
+    print(f"[WebSocket Stream] Abort job={job_id} context={context}{extra}", flush=True)
     await ws_manager.broadcast({
         "event_type": "llm_stream",
         "job_id": job_id,

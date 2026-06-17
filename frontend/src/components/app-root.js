@@ -34,6 +34,7 @@ export class AppRoot extends LitElement {
     providerParams: { type: Object },
     chatProviders: { type: Array },
     selectedChatProvider: { type: String },
+    selectedChatTemplate: { type: String },
     selectedUpsampler: { type: String },
     jobQueue: { type: Array },
     selectedJobId: { type: String },
@@ -76,6 +77,7 @@ export class AppRoot extends LitElement {
     this.providerParams = {};
     this.chatProviders = [];
     this.selectedChatProvider = '';
+    this.selectedChatTemplate = '';
     this.selectedUpsampler = '';
     this.jobQueue = [];
     this.selectedJobId = '';
@@ -172,6 +174,40 @@ export class AppRoot extends LitElement {
     if (this.chatProviders.length && !this.selectedChatProvider) this.selectedChatProvider = this.chatProviders[0].id;
   }
 
+  // Default the chat's Template Version to whatever template produced the JSON
+  // being edited. When the active editor subject changes, rebind to its
+  // template; a user's manual pick sticks until the subject changes again.
+  syncChatTemplate(state) {
+    const templates = state.providers?.templates || [];
+    const firstId = (templates[0] && (templates[0].id || templates[0])) || 'v1';
+
+    const active = selectActiveItem(state);
+    let subjectId = '';
+    let jobTemplate = '';
+    if (active?.status === 'editing') {
+      subjectId = active.id;
+      jobTemplate = active.upsamplerParams?.template || active.params?.upsampleTemplate || '';
+    } else {
+      const inspectorUuid = state.selection?.inspectorHistoryUuid;
+      if (inspectorUuid) {
+        const h = (state.history || []).find((x) => x.uuid === inspectorUuid);
+        if (h) {
+          subjectId = `inspector:${h.uuid}`;
+          jobTemplate = h.params?.upsampleTemplate || h.upsamplerParams?.template || '';
+        }
+      }
+    }
+
+    if (!jobTemplate) jobTemplate = firstId;
+
+    if (subjectId && subjectId !== this._chatTemplateSubjectId) {
+      this._chatTemplateSubjectId = subjectId;
+      this.selectedChatTemplate = jobTemplate;
+    } else if (!this.selectedChatTemplate) {
+      this.selectedChatTemplate = jobTemplate;
+    }
+  }
+
   syncFromStore() {
     const state = appStore.getState();
     this.apiOnline = state.ui.apiOnline;
@@ -198,6 +234,9 @@ export class AppRoot extends LitElement {
     this.inspectorItem = state.selection.inspectorHistoryUuid
       ? (state.history || []).find((h) => h.uuid === state.selection.inspectorHistoryUuid) || null
       : null;
+
+    // Default the chat Template Version to the edited subject's template.
+    this.syncChatTemplate(state);
 
     // Layout is a pure projection of state (replaces _preserveNextHomeRoute).
     const layout = deriveLayout(state);
@@ -730,6 +769,10 @@ export class AppRoot extends LitElement {
     this.selectedChatProvider = e.detail;
   }
 
+  onChatTemplateChange(e) {
+    this.selectedChatTemplate = e.detail;
+  }
+
   render() {
     const selectedJob = this.jobQueue.find((j) => j.id === this.selectedJobId);
     const inspectorJob = this.inspectorItem ? {
@@ -859,7 +902,10 @@ export class AppRoot extends LitElement {
                 .readOnly="${isInspector}"
                 .chatProviders="${this.chatProviders}"
                 .selectedChatProvider="${this.selectedChatProvider}"
+                .templates="${this.templates}"
+                .selectedChatTemplate="${this.selectedChatTemplate}"
                 @chat-provider-change="${this.onChatProviderChange}"
+                @chat-template-change="${this.onChatTemplateChange}"
                 @update-prompt="${(e) => this.onUpdateEditorPrompt(e)}"
                 @send-chat="${this.onSendEditorChat}"
                 @element-selected="${(e) => { appStore.dispatch({ type: 'SET_EDITOR', selectedIndex: e.detail }); }}"

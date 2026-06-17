@@ -5,7 +5,9 @@ export class AiChat extends LitElement {
     chatMessages: { type: Array },
     isRefining: { type: Boolean },
     chatProviders: { type: Array },
-    selectedChatProvider: { type: String }
+    selectedChatProvider: { type: String },
+    templates: { type: Array },
+    selectedChatTemplate: { type: String }
   };
 
   createRenderRoot() {
@@ -18,6 +20,8 @@ export class AiChat extends LitElement {
     this.isRefining = false;
     this.chatProviders = [];
     this.selectedChatProvider = '';
+    this.templates = [];
+    this.selectedChatTemplate = '';
   }
 
   updated(changedProperties) {
@@ -55,6 +59,10 @@ export class AiChat extends LitElement {
     this.dispatchEvent(new CustomEvent('chat-provider-change', { detail: e.target.value }));
   }
 
+  onTemplateChange(e) {
+    this.dispatchEvent(new CustomEvent('chat-template-change', { detail: e.target.value }));
+  }
+
   renderAssistantMessage(msg) {
     const messageContent = msg.content || '';
     const trimmed = messageContent.trim();
@@ -85,19 +93,38 @@ export class AiChat extends LitElement {
   render() {
     return html`
       <div id="contentSubtabAiChat" class="subtab-content-panel" style="padding-top: 0;">
-        <div style="padding: 0.5rem; background: var(--overlay-bg); border-bottom: 1px solid var(--overlay-border); margin-bottom: 0.5rem;">
-          <select 
-            class="editor-textarea-sm" 
-            style="height: 32px; padding: 0.25rem 0.5rem;"
-            .value="${this.selectedChatProvider}" 
-            @change="${this.onProviderChange}"
-            ?disabled="${this.isRefining || !this.chatProviders?.length}">
-            ${(!this.chatProviders || this.chatProviders.length === 0) ? html`
-              <option value="">No chat providers available</option>
-            ` : this.chatProviders.map(p => html`
-              <option value="${p.id}">${p.name}</option>
-            `)}
-          </select>
+        <div style="padding: 0.5rem; background: var(--overlay-bg); border-bottom: 1px solid var(--overlay-border); margin-bottom: 0.5rem; display:flex; flex-direction:column; gap:0.4rem;">
+          <div>
+            <label class="sub-label">Provider</label>
+            <select
+              class="editor-textarea-sm"
+              style="height: 32px; padding: 0.25rem 0.5rem; width: 100%;"
+              .value="${this.selectedChatProvider}"
+              @change="${this.onProviderChange}"
+              ?disabled="${this.isRefining || !this.chatProviders?.length}">
+              ${(!this.chatProviders || this.chatProviders.length === 0) ? html`
+                <option value="">No chat providers available</option>
+              ` : this.chatProviders.map(p => html`
+                <option value="${p.id}" ?selected="${this.selectedChatProvider === p.id}">${p.name}</option>
+              `)}
+            </select>
+          </div>
+          <div>
+            <label class="sub-label">Template Version</label>
+            <select
+              class="editor-textarea-sm"
+              style="height: 32px; padding: 0.25rem 0.5rem; width: 100%;"
+              .value="${this.selectedChatTemplate}"
+              @change="${this.onTemplateChange}"
+              ?disabled="${this.isRefining || !this.templates?.length}"
+              title="System prompt / output format the AI must follow for this chat">
+              ${(!this.templates || this.templates.length === 0) ? html`
+                <option value="">No templates available</option>
+              ` : this.templates.map(t => html`
+                <option value="${t.id || t}" ?selected="${this.selectedChatTemplate === (t.id || t)}">${t.fullname || t}</option>
+              `)}
+            </select>
+          </div>
         </div>
         <div class="ai-chat-log" id="aiChatLog">
           ${!this.chatMessages || this.chatMessages.length === 0 ? html`

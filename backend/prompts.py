@@ -4,8 +4,12 @@ CURR_DIR = Path(__file__).parent.parent.resolve()
 PROMPTS_DIR = CURR_DIR / "config" / "upsample-prompts"
 
 
+def template_file_path(name: str) -> Path:
+    return PROMPTS_DIR / f"{name}.txt"
+
+
 def load_meta(name: str) -> dict:
-    v_path = PROMPTS_DIR / f"{name}.txt"
+    v_path = template_file_path(name)
     if not v_path.exists():
         return {}
     try:
@@ -53,7 +57,7 @@ def list_templates():
 
 
 def load_template_prompts(name: str):
-    v_path = PROMPTS_DIR / f"{name}.txt"
+    v_path = template_file_path(name)
     if not v_path.exists():
         return {
             "system": "You convert a natural-language user idea into a structured JSON caption an image renderer can consume. Output a single-line minified JSON with keys: aspect_ratio, high_level_description, compositional_deconstruction.",
