@@ -25,9 +25,8 @@ COPY backend/ backend/
 COPY server.py ./
 COPY alembic.ini ./
 
-# Create static directory and copy built frontend
-RUN mkdir -p static
-COPY --from=frontend-builder /app/frontend/dist/ static/
+# Copy frontend build (vite.config.js sets outDir: '../static', so build output lands in /app/static)
+COPY --from=frontend-builder /app/static/ static/
 
 # Make sure virtual environment bin directory is on the path
 ENV PATH="/app/.venv/bin:$PATH"
