@@ -16,4 +16,4 @@ class BaseProvider(ABC):
         raise NotImplementedError
 
     def get_display_name(self) -> str:
-        return self.config.get("name") or self.provider_id
+        return self.config.get("display_name") or self.config.get("name") or self.provider_id

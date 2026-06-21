@@ -655,9 +655,18 @@ export class AppRoot extends LitElement {
       const g = appStore.getState().generator;
       const providerParams = providerParamsFromHistory(item);
       const upsampledPrompt = promptWithAspectRatio(item.upsampledPrompt, aspectRatioFromProviderParams(providerParams));
+      const requestedProvider = item.params?.provider || item.params?.endpoint || g.selectedEndpoint;
+      const provider = this.providerSchemas?.[requestedProvider]
+        ? requestedProvider
+        : selectDefaultProviderId(appStore.getState());
+      if (requestedProvider && provider !== requestedProvider) {
+        this.showToast(`Endpoint "${requestedProvider}" is no longer available; using default.`, 'info');
+        appStore.dispatch({ type: 'SET_GENERATOR_FIELD', field: 'selectedEndpoint', value: provider });
+        this.syncFromStore();
+      }
       const result = await appStore.createItem({
         raw_prompt: item.rawPrompt,
-        provider: item.params?.provider || item.params?.endpoint || g.selectedEndpoint,
+        provider,
         upsampler: item.params?.upsampler && item.params.upsampler !== 'deepseek' ? item.params.upsampler : (g.selectedUpsampler || selectDefaultUpsamplerId(appStore.getState()) || null),
         parent_uuid: item.uuid || null,
         magic_prompt: false,

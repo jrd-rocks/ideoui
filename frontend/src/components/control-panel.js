@@ -319,7 +319,7 @@ export class ControlPanel extends LitElement {
             <select id="endpointSelect" .value="${this.selectedEndpoint}" @change="${this.onEndpointChange}">
               ${Object.entries(this.providerSchemas || {})
                 .filter(([, schema]) => schema.type === 'generation')
-                .map(([id, schema]) => html`<option value="${id}" ?selected="${this.selectedEndpoint === id}">${schema.displayName}${schema.default ? ' (default)' : ''}</option>`)}
+                .map(([id, schema]) => html`<option value="${id}" ?selected="${this.selectedEndpoint === id}">${schema.fullname || schema.displayName}${schema.default ? ' (default)' : ''}</option>`)}
             </select>
           </div>
 

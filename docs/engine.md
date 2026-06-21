@@ -1,18 +1,17 @@
 # TOML-Driven Generic Provider System
 
-IdeoUI uses a configuration-driven system where each endpoint is defined by a `.toml` file in `config/providers/`. This replaces hardcoded provider classes with two maximally generic engines.
+IdeoUI uses a configuration-driven system where each provider is declared either as a `[section]` entry inside `config/config.toml` (preferred) or as a `.toml` file in `config/providers/`. Both forms are equivalent and resolve through the same two maximally generic engines — there are no hardcoded provider classes.
 
 ## Naming Conventions & File Layout
 
 ```
 config/
-├── config.toml                        # infra only (database, r2) — private
-├── config.example.toml                # committed, no secrets
+├── config.toml                        # infra (database, r2, [auth]) + provider [entries] — private
+├── config.example.toml                # committed template, no secrets
 └── providers/
-    ├── _modal.toml                    # base — inherited by diffusion_modal_*.toml
-    ├── _deepseek.toml                 # base — inherited by llm_deepseek*.toml
-    ├── diffusion_modal_fp8.toml       # selectable — extends _modal.toml
-    ├── diffusion_modal_nvfp4.toml     # selectable — extends _modal.toml
+    ├── _modal.toml                    # base — extended by Modal diffusion entries/files
+    ├── _deepseek.toml                 # base — extended by DeepSeek
+    ├── diffusion_modal.example.toml   # selectable file example — extends _modal.toml
     ├── llm_deepseek.toml              # selectable — extends _deepseek.toml
     └── llm_ideogram_magic.toml        # selectable — standalone
 ```
@@ -22,6 +21,41 @@ config/
 | `_*` | Base / abstract config | No — only inherited from |
 | `llm_*` | LLM / text endpoint | Yes — upsampler dropdown |
 | `diffusion_*` | Image generation endpoint | Yes — generation dropdown |
+
+Providers can also be declared as `[section]` entries inside `config/config.toml` (marked `type = "entry"`) — the preferred form for credential/display variants. The section name becomes the provider id. See [Provider Entries](#provider-entries-preferred) below.
+
+---
+
+## Provider Entries (preferred)
+
+Instead of one file per provider, declare providers as `[section]` tables inside `config/config.toml`, marked with `type = "entry"`. This is the preferred format for providers that differ only in credentials and display metadata (e.g. multiple Modal deployments). The section name becomes the provider id.
+
+```toml
+[my_endpoint]
+type = "entry"                          # marks this section as a provider
+enabled = true                          # optional; false skips loading
+kind = "diffusion"                      # becomes the merged config's `type`
+extends = "providers/_modal.toml"       # base template (relative to config.toml)
+display_name = "fp8"                    # short label
+fullname = "Modal fp8"       # explicit; entries have no filename
+url = "socks://proxy:8391|https://….modal.run"   # flat at entry root → mapped into [auth].url
+
+[my_entry.auth]
+modal_key = "wk-…"
+modal_secret = "ws-…"
+```
+
+| Field | Purpose |
+|---|---|
+| `type = "entry"` | Marker — distinguishes providers from infra sections (`[database]`, `[r2]`, `[auth]`) |
+| `kind` | Maps to the merged config's `type` (`diffusion` or `llm`) |
+| `extends` | Base template path, relative to `config.toml` (e.g. `providers/_modal.toml`) |
+| `enabled` | `false` skips this provider; defaults to `true` |
+| `display_name` / `fullname` | Explicit naming (entries have no filename to derive these from) |
+| `url` (flat) | Convenience: mapped into `[auth].url` so the `http` engine finds it |
+| `[<entry>.auth]` | Credentials, merged onto the base `[auth]` and available to `{{auth.X}}` templates |
+
+Entries and file-based providers coexist and are fully equivalent — use whichever fits. Entries are kind-agnostic and work for `llm` providers exactly the same way.
 
 ---
 
@@ -61,6 +95,8 @@ extends = "_modal.toml"
 extends = ["_modal.toml", "../config.toml"]
 ```
 Single-level, recursive dict merge. Child keys override parent. Nested tables merged key-by-key. If an array is provided, parents are merged from left to right, and finally the child config overrides them all.
+
+`extends` paths resolve relative to the file that declares them: file-based providers (in `config/providers/`) resolve relative to that directory, while `[section]` entries in `config/config.toml` resolve relative to `config/` — e.g. `extends = "providers/_modal.toml"`.
 
 ### Template Resolution
 Values wrapped in `{{section.key}}` are templates resolved as a **last pass** after TOML hierarchy merge. This means a base file can define templates that reference keys the child provides.

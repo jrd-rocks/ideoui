@@ -15,6 +15,7 @@ export function withProviderDefaults(ctx, providerId, params = {}) {
 export function providerParamsFromHistory(item) {
   if (item?.params?.providerParams) return item.params.providerParams;
   return {
+    aspect_ratio: item?.params?.aspect_ratio || item?.providerParams?.aspect_ratio,
     sampler_preset: item?.params?.preset || 'V4_QUALITY_48',
     size: item?.params?.size || '1024x1024',
     steps: item?.params?.steps || 48,

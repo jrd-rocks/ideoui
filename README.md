@@ -42,8 +42,8 @@ Here is how the project is structured:
 │   └── migrations/             # Alembic migration history
 ├── config/
 │   ├── config.example.toml     # Template configuration file
-│   ├── config.toml             # Your local configuration (git-ignored)
-│   ├── providers/              # TOML configurations for DeepSeek and generation endpoints
+│   ├── config.toml             # Your local config + provider entries (git-ignored)
+│   ├── providers/              # Base templates & file-based providers (TOML)
 │   └── upsample-prompts/       # System prompts for upsample templates (e.g. v1, v4)
 ├── static/                     # Built frontend assets served by the backend
 ├── docs/
@@ -57,9 +57,25 @@ Here is how the project is structured:
 
 ## TOML-Driven Generic Provider System
 
-IdeoUI features a modular, configuration-driven system for integrating image generation and LLM upsampling backends. Instead of hardcoding API classes, all selectable providers are defined in `.toml` files located under `config/providers/` and resolved dynamically.
+IdeoUI features a modular, configuration-driven system for integrating image generation and LLM upsampling backends. Instead of hardcoding API classes, providers are declared either as `[section]` entries in `config/config.toml` (the preferred form) or as `{llm|diffusion}_*.toml` files under `config/providers/`, and resolved dynamically. Both forms are equivalent and kind-agnostic (diffusion + LLM).
 
-For detailed documentation on the architecture, templating namespaces (`{{auth}}`, `{{inputs}}`, `{{runtime}}`), and customization schemas, please see [docs/engine.md](docs/engine.md). A high-level overview of the system architecture is available in [docs/architecture.md](docs/architecture.md).
+A minimal entry — the preferred format for providers that differ only in credentials and display metadata:
+
+```toml
+[my_endpoint]
+type = "entry"
+kind = "diffusion"
+extends = "providers/_modal.toml"
+display_name = "fp8"
+fullname = "Modal fp8"
+url = "socks://proxy:8391|https://….modal.run"
+
+[my_endpoint.auth]
+modal_key = "wk-…"
+modal_secret = "ws-…"
+```
+
+For detailed documentation on the architecture, the entry schema, templating namespaces (`{{auth}}`, `{{inputs}}`, `{{runtime}}`), and customization schemas, please see [docs/engine.md](docs/engine.md). A high-level overview of the system architecture is available in [docs/architecture.md](docs/architecture.md).
 
 ---
 
